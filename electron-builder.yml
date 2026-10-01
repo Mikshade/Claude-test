@@ -1,0 +1,27 @@
+appId: dev.flowy.companion
+productName: Flowy
+directories:
+  output: release
+  buildResources: resources
+files:
+  - out/**
+  - package.json
+  - "!**/*.map"
+extraResources:
+  - from: resources/models
+    to: models
+    filter: ["**/*"]
+asar: true
+win:
+  target:
+    - nsis
+    - portable
+  icon: resources/icon.ico
+  # 'asInvoker' = normal user rights. The app offers an in-app "Restart as administrator"
+  # action for full root access; set this to 'requireAdministrator' to always elevate.
+  requestedExecutionLevel: asInvoker
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  shortcutName: Flowy

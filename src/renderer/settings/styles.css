@@ -1,0 +1,24 @@
+/* OWNER: settings-ui agent. */
+:root {
+  color-scheme: light dark;
+  --bg: #f7f5fb;
+  --fg: #1f1b2e;
+  --accent: #8b5cf6;
+  --card: #ffffff;
+  --muted: #6b6480;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15121f;
+    --fg: #ece8f5;
+    --card: #1f1a2d;
+    --muted: #a39bb8;
+  }
+}
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}

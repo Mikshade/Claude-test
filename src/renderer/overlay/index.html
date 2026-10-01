@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Cubism Core must be a classic global script loaded BEFORE the module bundle. The CDN fallback
+         is used only when `npm run setup:live2d` has not placed the file under public/vendor. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' flowy-model:; script-src 'self' https://cubism.live2d.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: flowy-model:; media-src 'self' blob: data:; connect-src 'self' flowy-model: blob: data:; font-src 'self' data:"
+    />
+    <title>Flowy</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="overlay">
+    <script src="../vendor/live2dcubismcore.min.js"></script>
+    <div id="stage"></div>
+    <div id="bubble" class="bubble hidden" aria-live="polite"></div>
+    <div id="chat" class="chat hidden"></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

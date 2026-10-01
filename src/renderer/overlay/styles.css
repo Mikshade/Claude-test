@@ -1,0 +1,33 @@
+/* OWNER: renderer-ui agent. Keep the document fully transparent; only #stage/.bubble/.chat paint. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+body.overlay {
+  pointer-events: none;
+}
+
+#stage {
+  position: absolute;
+  inset: 0;
+}
+
+#stage canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
+}
+
+.hidden {
+  display: none !important;
+}

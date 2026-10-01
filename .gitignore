@@ -1,0 +1,18 @@
+node_modules/
+out/
+dist/
+release/
+*.log
+.DS_Store
+Thumbs.db
+.env
+.env.*
+
+# Downloaded Live2D runtime + sample models (fetched by `npm run setup:live2d`)
+src/renderer/public/vendor/live2dcubismcore.min.js
+src/renderer/public/vendor/live2d.min.js
+resources/models/*
+!resources/models/README.md
+
+# Vitest
+coverage/
