@@ -11,6 +11,10 @@ extraResources:
   - from: resources/models
     to: models
     filter: ["**/*"]
+  # Persistent PowerShell host script (sent user scripts over stdin; avoids -EncodedCommand AV heuristics)
+  - from: resources/ps
+    to: ps
+    filter: ["**/*"]
 asar: true
 win:
   target:

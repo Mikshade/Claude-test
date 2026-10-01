@@ -43,6 +43,6 @@ describe('config schema', () => {
     expect(r.llm.apiKey).toMatch(/…/)
     expect(r.tts.fishCloud.apiKey).toMatch(/…/)
     expect(r.stt.openaiCompatible.apiKey).toBe('••••')
-    expect(SECRET_PATHS).toHaveLength(3)
+    expect(SECRET_PATHS).toHaveLength(4)
   })
 })

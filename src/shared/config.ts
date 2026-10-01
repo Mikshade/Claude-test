@@ -169,6 +169,15 @@ export const ScreenAwarenessConfigSchema = z.object({
   jpegQuality: z.number().int().min(30).max(95).default(70),
 })
 
+export const WebConfigSchema = z.object({
+  /** 'brave' needs an API key (https://brave.com/search/api/); 'duckduckgo' scrapes the HTML endpoint (best effort, may be blocked). */
+  searchProvider: z.enum(['duckduckgo', 'brave']).default('duckduckgo'),
+  /** Stored encrypted at rest. */
+  braveApiKey: z.string().default(''),
+  /** Max characters of extracted page text returned to the model. */
+  maxPageChars: z.number().int().min(2000).max(200000).default(20000),
+})
+
 export const AvatarConfigSchema = z.object({
   /** Absolute path to a Live2D `*.model3.json` (or Cubism 2 `*.model.json`). Empty = bundled default / fallback. */
   modelPath: z.string().default(''),
@@ -225,6 +234,7 @@ export const FlowyConfigSchema = z.object({
   hotkeys: HotkeysConfigSchema.prefault({}),
   permissions: PermissionsConfigSchema.prefault({}),
   screenAwareness: ScreenAwarenessConfigSchema.prefault({}),
+  web: WebConfigSchema.prefault({}),
   avatar: AvatarConfigSchema.prefault({}),
   appearance: AppearanceConfigSchema.prefault({}),
   behavior: BehaviorConfigSchema.prefault({}),
@@ -241,6 +251,7 @@ export type SttConfig = z.infer<typeof SttConfigSchema>
 export type HotkeysConfig = z.infer<typeof HotkeysConfigSchema>
 export type PermissionsConfig = z.infer<typeof PermissionsConfigSchema>
 export type ScreenAwarenessConfig = z.infer<typeof ScreenAwarenessConfigSchema>
+export type WebConfig = z.infer<typeof WebConfigSchema>
 export type AvatarConfig = z.infer<typeof AvatarConfigSchema>
 export type AppearanceConfig = z.infer<typeof AppearanceConfigSchema>
 export type BehaviorConfig = z.infer<typeof BehaviorConfigSchema>
@@ -256,7 +267,7 @@ export const DEFAULT_CONFIG: FlowyConfig = FlowyConfigSchema.parse({})
 
 /** Dot-paths of fields that must be encrypted at rest and never sent to the renderer in clear text
  *  except through the explicit settings page (which the user opened). */
-export const SECRET_PATHS = ['llm.apiKey', 'tts.fishCloud.apiKey', 'stt.openaiCompatible.apiKey'] as const
+export const SECRET_PATHS = ['llm.apiKey', 'tts.fishCloud.apiKey', 'stt.openaiCompatible.apiKey', 'web.braveApiKey'] as const
 
 /** Deep-merge a patch into a config object (arrays are replaced, objects merged). */
 export function mergeConfig<T extends object>(base: T, patch: DeepPartial<T>): T {
@@ -291,6 +302,7 @@ export function redactConfig(config: FlowyConfig): FlowyConfig {
   copy.llm.apiKey = mask(copy.llm.apiKey)
   copy.tts.fishCloud.apiKey = mask(copy.tts.fishCloud.apiKey)
   copy.stt.openaiCompatible.apiKey = mask(copy.stt.openaiCompatible.apiKey)
+  copy.web.braveApiKey = mask(copy.web.braveApiKey)
   return copy
 }
 
