@@ -16,3 +16,6 @@ resources/models/*
 
 # Vitest
 coverage/
+
+# TypeScript incremental build info
+*.tsbuildinfo
