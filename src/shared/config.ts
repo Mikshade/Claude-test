@@ -147,7 +147,8 @@ export const HotkeysConfigSchema = z.object({
   pushToTalk: z.string().default('CommandOrControl+Shift+Space'),
   toggleVisibility: z.string().default('CommandOrControl+Shift+H'),
   openChat: z.string().default('CommandOrControl+Shift+Enter'),
-  interrupt: z.string().default('Escape'),
+  /** Empty = disabled. A bare global 'Escape' would steal Escape from every app; use e.g. 'CommandOrControl+Shift+Escape'. */
+  interrupt: z.string().default(''),
 })
 
 export const PermissionsConfigSchema = z.object({

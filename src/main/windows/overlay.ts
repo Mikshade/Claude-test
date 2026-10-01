@@ -18,6 +18,8 @@ export interface OverlayWindow {
   readonly window: BrowserWindow
   /** Toggle click-through. `interactive=true` means the character can be clicked. */
   setInteractive(interactive: boolean): void
+  /** Give the overlay keyboard focus (chat input) or return focus to the previously active app. */
+  setFocus(focused: boolean): void
   /** Show/hide the character (keeps the window alive). */
   setVisible(visible: boolean): void
   isVisible(): boolean

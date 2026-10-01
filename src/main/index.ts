@@ -189,6 +189,7 @@ async function bootstrap(): Promise<void> {
   })
 
   handle('overlay:setInteractive', (_e, interactive) => overlay?.setInteractive(interactive))
+  handle('overlay:setFocus', (_e, focused) => overlay?.setFocus(focused))
   handle('overlay:reportBounds', () => undefined)
   handle('overlay:showContextMenu', () => {
     void import('./windows/contextMenu').then((m) => m.showCharacterMenu(overlay?.window ?? null, trayActions))

@@ -72,6 +72,8 @@ export interface Invoke {
 
   /** Overlay tells main whether the cursor is over the character (controls click-through). */
   'overlay:setInteractive': { args: [interactive: boolean]; result: void }
+  /** Overlay needs keyboard focus (chat input open) or gives it back to the previous app. */
+  'overlay:setFocus': { args: [focused: boolean]; result: void }
   /** Overlay reports the character's current screen rect (for context menus / bubbles). */
   'overlay:reportBounds': { args: [rect: Rect]; result: void }
   'overlay:showContextMenu': { args: []; result: void }
@@ -141,6 +143,7 @@ export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   'config:searchVoices',
   'config:pickModelFile',
   'overlay:setInteractive',
+  'overlay:setFocus',
   'overlay:reportBounds',
   'overlay:showContextMenu',
   'turn:submitAudio',

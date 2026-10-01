@@ -224,7 +224,8 @@ The main bootstrap rebuilds the agent/TTS/STT clients when their config sections
 
 | Agent | Files |
 | --- | --- |
-| overlay | `src/main/windows/overlay.ts`, `src/main/windows/modelProtocol.ts`, `src/main/hotkeys.ts` |
+| overlay | `src/main/windows/overlay.ts`, `src/main/windows/modelProtocol.ts` |
+| core-logic (done) | `src/renderer/overlay/movement.ts`, `src/main/memory/notes.ts`, `src/main/hotkeys.ts` |
 | renderer-core | `src/renderer/overlay/character/*`, `src/renderer/overlay/movement.ts`, `src/renderer/overlay/main.ts` |
 | renderer-ui | `src/renderer/overlay/bubble.ts`, `src/renderer/overlay/styles.css`, `src/renderer/overlay/index.html` |
 | audio | `src/renderer/overlay/audio/*` |
