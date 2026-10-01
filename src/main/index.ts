@@ -9,7 +9,7 @@ import { redactConfig } from '@shared/config'
 import { buildSystemPrompt } from '@shared/personality'
 import { createAgent, type Agent } from './brain/agent'
 import { createHistory } from './brain/history'
-import { availableTools, type ToolServices } from './brain/tools/registry'
+import { availableTools, disposeTools, type ToolServices } from './brain/tools/registry'
 import { ConfigStore, identityCipher, type SecretCipher } from './config/store'
 import { registerHotkeys, type HotkeyRegistration } from './hotkeys'
 import { handle } from './ipc'
@@ -63,7 +63,21 @@ async function bootstrap(): Promise<void> {
   const powershell = createPowerShellHost()
   const system = createWindowsSystem(powershell)
   const notes = createNotesStore(notesFile())
-  const services: ToolServices = { powershell, screenshot, notes }
+  const services: ToolServices = {
+    powershell,
+    screenshot,
+    notes,
+    system,
+    // A due reminder becomes a proactive turn (the orchestrator is created below; this only runs later).
+    onReminder: (message) => {
+      const de = store.get().character.language === 'de'
+      void orchestrator.proactive(
+        de
+          ? `Eine Erinnerung ist fällig: "${message}". Sag dem Nutzer jetzt kurz Bescheid.`
+          : `A reminder is due: "${message}". Tell the user now, briefly.`,
+      )
+    },
+  }
   const history = createHistory(historyFile())
 
   let agent: Agent = buildAgent()
@@ -246,9 +260,13 @@ async function bootstrap(): Promise<void> {
     hotkeys?.dispose()
     tray?.dispose()
     orchestrator.dispose()
+    disposeTools(services)
     powershell.dispose()
     history.save()
   })
+
+  // Pre-compile the Win32/CoreAudio interop in the PowerShell host so the first tool call is fast.
+  if (process.platform === 'win32') void system.warmup().catch((err) => log.warn('interop warmup failed', err))
 
   async function relaunchElevated(): Promise<void> {
     if (process.platform !== 'win32') return
