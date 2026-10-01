@@ -15,8 +15,9 @@
   <body class="overlay">
     <script src="../vendor/live2dcubismcore.min.js"></script>
     <div id="stage"></div>
-    <div id="bubble" class="bubble hidden" aria-live="polite"></div>
-    <div id="chat" class="chat hidden"></div>
+    <!-- The speech bubble is the only interactive DOM: chat input, confirm prompt and subtitles live inside it
+         (bubble.ts builds the inner structure). -->
+    <div id="bubble" class="bubble" data-visible="false" aria-live="polite"></div>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

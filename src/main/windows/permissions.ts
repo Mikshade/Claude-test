@@ -56,7 +56,11 @@ export function isOwnOrigin(urlOrOrigin: string | null | undefined): boolean {
  * Pure policy: should `permission` be granted to `origin`?
  * 'media' is audio-only: a request listing 'video' (or a check for mediaType 'video') is denied.
  */
-export function decidePermission(permission: string, origin: string | null | undefined, details: PermissionDetails = {}): boolean {
+export function decidePermission(
+  permission: string,
+  origin: string | null | undefined,
+  details: PermissionDetails = {},
+): boolean {
   if (!ALLOWED_PERMISSIONS.has(permission)) return false
   if (!isOwnOrigin(origin)) return false
   if (permission === 'media') {

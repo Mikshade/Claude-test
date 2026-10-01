@@ -36,12 +36,14 @@ export interface CharacterOptions {
 
 export type CharacterPlan = 'live2d' | 'inject-core' | 'fallback'
 
-/** Pure decision: what to try first. */
-export function planCharacter(modelUrl: string | null, coreAvailable: boolean, coreLoaded: boolean): CharacterPlan {
+/**
+ * Pure decision: what to try first. Without a model there is nothing to render with Live2D. With a
+ * model, a missing core global (vendored file absent or its script failed) means "try the CDN" –
+ * `coreAvailable` from main is only a hint used for logging.
+ */
+export function planCharacter(modelUrl: string | null, coreLoaded: boolean): CharacterPlan {
   if (!modelUrl) return 'fallback'
-  if (coreLoaded) return 'live2d'
-  // Even when main says the file exists, the global may be missing (script failed) – the CDN is the next try.
-  return coreAvailable || !coreLoaded ? 'inject-core' : 'fallback'
+  return coreLoaded ? 'live2d' : 'inject-core'
 }
 
 export function coreLoaded(): boolean {
@@ -55,7 +57,7 @@ export function injectCubismCore(src = CUBISM_CORE_CDN, timeoutMs = CORE_LOAD_TI
     const script = document.createElement('script')
     script.src = src
     script.async = true
-    const timer = window.setTimeout(() => finish(new Error(`Cubism Core load timed out after ${timeoutMs} ms`)), timeoutMs)
+    let timer = 0
     const finish = (err: Error | null): void => {
       window.clearTimeout(timer)
       script.onload = null
@@ -65,6 +67,7 @@ export function injectCubismCore(src = CUBISM_CORE_CDN, timeoutMs = CORE_LOAD_TI
         reject(err)
       } else resolve()
     }
+    timer = window.setTimeout(() => finish(new Error(`Cubism Core load timed out after ${timeoutMs} ms`)), timeoutMs)
     script.onload = () => finish(coreLoaded() ? null : new Error('Cubism Core script loaded but window.Live2DCubismCore is missing'))
     script.onerror = () => finish(new Error(`Cubism Core script failed to load from ${src}`))
     document.head.appendChild(script)
@@ -74,11 +77,15 @@ export function injectCubismCore(src = CUBISM_CORE_CDN, timeoutMs = CORE_LOAD_TI
 /** Create and load the best available character. Never rejects – the fallback always works. */
 export async function createCharacter(options: CharacterOptions): Promise<Character> {
   const { modelUrl, coreAvailable, height, mirror, stage } = options
-  const plan = planCharacter(modelUrl, coreAvailable, coreLoaded())
+  const plan = planCharacter(modelUrl, coreLoaded())
   if (modelUrl && plan !== 'fallback') {
     try {
       if (plan === 'inject-core') {
-        console.info('[character] Cubism Core not present, loading it from the CDN')
+        console.info(
+          coreAvailable
+            ? '[character] vendored Cubism Core did not initialise, loading it from the CDN'
+            : '[character] Cubism Core not bundled, loading it from the CDN',
+        )
         await injectCubismCore()
       }
       const { createLive2DCharacter } = await import('./live2d')

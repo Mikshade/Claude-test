@@ -1,4 +1,4 @@
-/* OWNER: renderer-ui agent. Keep the document fully transparent; only #stage/.bubble/.chat paint. */
+/* OWNER: renderer-ui agent. The document stays fully transparent and click-through; only #bubble paints UI. */
 html,
 body {
   margin: 0;
@@ -9,7 +9,7 @@ body {
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
 body.overlay {
@@ -30,4 +30,638 @@ body.overlay {
 
 .hidden {
   display: none !important;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* ---- bubble: design tokens (light), dark via prefers-color-scheme or data-theme ------------------ */
+.bubble {
+  --accent: #8b5cf6;
+  --accent-soft: #a78bfa;
+  --pink: #f472b6;
+  --pink-deep: #ec4899;
+  --bubble-bg: rgba(255, 255, 255, 0.86);
+  --bubble-border: rgba(255, 255, 255, 0.85);
+  --bubble-fg: #1f1b2e;
+  --bubble-muted: #6b6480;
+  --bubble-shadow: 0 12px 32px rgba(31, 27, 46, 0.18), 0 2px 6px rgba(31, 27, 46, 0.08);
+  --bubble-divider: rgba(31, 27, 46, 0.08);
+  --chip-bg: rgba(139, 92, 246, 0.12);
+  --chip-fg: #6d3fe0;
+  --chip-listen-bg: rgba(244, 114, 182, 0.16);
+  --chip-listen-fg: #d1337f;
+  --input-bg: rgba(139, 92, 246, 0.08);
+  --code-bg: rgba(31, 27, 46, 0.06);
+  --error-fg: #b91c1c;
+  --error-bg: rgba(239, 68, 68, 0.12);
+  --danger: #ef4444;
+  --bubble-font: 15px;
+  --bubble-radius: 18px;
+  --tail-offset: 30px;
+  --level: 0;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  .bubble:not([data-theme='light']) {
+    --bubble-bg: rgba(28, 24, 42, 0.88);
+    --bubble-border: rgba(255, 255, 255, 0.14);
+    --bubble-fg: #ece8f5;
+    --bubble-muted: #a39bb8;
+    --bubble-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+    --bubble-divider: rgba(255, 255, 255, 0.1);
+    --chip-bg: rgba(167, 139, 250, 0.18);
+    --chip-fg: #c4b5fd;
+    --chip-listen-bg: rgba(244, 114, 182, 0.2);
+    --chip-listen-fg: #f9a8d4;
+    --input-bg: rgba(167, 139, 250, 0.12);
+    --code-bg: rgba(255, 255, 255, 0.07);
+    --error-fg: #fca5a5;
+    --error-bg: rgba(239, 68, 68, 0.18);
+    color-scheme: dark;
+  }
+}
+
+.bubble[data-theme='dark'] {
+  --bubble-bg: rgba(28, 24, 42, 0.88);
+  --bubble-border: rgba(255, 255, 255, 0.14);
+  --bubble-fg: #ece8f5;
+  --bubble-muted: #a39bb8;
+  --bubble-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --bubble-divider: rgba(255, 255, 255, 0.1);
+  --chip-bg: rgba(167, 139, 250, 0.18);
+  --chip-fg: #c4b5fd;
+  --chip-listen-bg: rgba(244, 114, 182, 0.2);
+  --chip-listen-fg: #f9a8d4;
+  --input-bg: rgba(167, 139, 250, 0.12);
+  --code-bg: rgba(255, 255, 255, 0.07);
+  --error-fg: #fca5a5;
+  --error-bg: rgba(239, 68, 68, 0.18);
+  color-scheme: dark;
+}
+
+/* ---- bubble: container + enter/exit animation ------------------------------------------------------ */
+.bubble {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 10;
+  width: max-content;
+  min-width: 200px;
+  max-width: 380px;
+  box-sizing: border-box;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: var(--bubble-font);
+  line-height: 1.45;
+  color: var(--bubble-fg);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 160ms ease,
+    visibility 0s linear 160ms;
+}
+
+.bubble[data-visible='true'] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity 160ms ease,
+    visibility 0s;
+}
+
+.bubble-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px 12px;
+  border-radius: var(--bubble-radius);
+  background: var(--bubble-bg);
+  border: 1px solid var(--bubble-border);
+  box-shadow: var(--bubble-shadow);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+  transform: translateY(6px);
+  transition: transform 160ms ease;
+}
+
+.bubble[data-visible='true'] .bubble-card {
+  transform: translateY(0);
+}
+
+/* A hair-thin accent line along the top gives the glass a highlight. */
+.bubble-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 18px auto 18px;
+  height: 1px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, transparent, var(--pink), var(--accent), transparent);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* ---- tail ------------------------------------------------------------------------------------------- */
+.bubble-tail {
+  position: absolute;
+  width: 16px;
+  height: 32px;
+  overflow: visible;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 2px rgba(31, 27, 46, 0.12));
+}
+
+.bubble-tail path {
+  fill: var(--bubble-bg);
+  stroke: var(--bubble-border);
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+
+/* bubble on her LEFT → tail on the bubble's right edge, pointing right */
+.bubble[data-side='left'] .bubble-tail {
+  left: calc(100% - 1px);
+  top: calc(var(--tail-offset) - 16px);
+}
+
+/* bubble on her RIGHT → tail on the left edge, pointing left */
+.bubble[data-side='right'] .bubble-tail {
+  right: calc(100% - 1px);
+  top: calc(var(--tail-offset) - 16px);
+  transform: scaleX(-1);
+}
+
+/* bubble ABOVE her → tail on the bottom edge, pointing down (16×32 box rotated around its centre) */
+.bubble[data-side='top'] .bubble-tail {
+  left: calc(var(--tail-offset) - 8px);
+  top: calc(100% - 9px);
+  transform: rotate(90deg);
+}
+
+/* ---- head: state chip + buttons -------------------------------------------------------------------- */
+.bubble-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+}
+
+.bubble-head .spacer {
+  flex: 1;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 24px;
+  padding: 0 11px 0 9px;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  color: var(--chip-fg);
+  font-size: 0.78em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.chip[data-kind='listening'] {
+  background: var(--chip-listen-bg);
+  color: var(--chip-listen-fg);
+}
+
+.chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 0 currentColor;
+}
+
+.chip[data-kind='listening'] .chip-dot,
+.chip[data-kind='speaking'] .chip-dot {
+  animation: chip-pulse 1.4s ease-out infinite;
+}
+
+.chip[data-kind='thinking'] .chip-dot {
+  display: none;
+}
+
+/* equalizer: four bars driven by --level (set from setInputLevel) with a gentle idle wiggle */
+.chip-eq {
+  display: none;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+}
+
+.chip[data-kind='listening'] .chip-eq {
+  display: inline-flex;
+}
+
+.chip-eq i {
+  display: block;
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: currentColor;
+  transform-origin: 50% 100%;
+  transform: scaleY(calc(0.2 + 0.8 * var(--level)));
+  animation: eq-bar 620ms ease-in-out infinite alternate;
+}
+
+.chip-eq i:nth-child(1) {
+  animation-delay: -120ms;
+}
+
+.chip-eq i:nth-child(2) {
+  animation-delay: -360ms;
+}
+
+.chip-eq i:nth-child(3) {
+  animation-delay: -40ms;
+}
+
+.chip-eq i:nth-child(4) {
+  animation-delay: -250ms;
+}
+
+/* thinking: three bouncing dots */
+.chip-dots {
+  display: none;
+  align-items: center;
+  gap: 3px;
+  height: 14px;
+}
+
+.chip[data-kind='thinking'] .chip-dots {
+  display: inline-flex;
+}
+
+.chip-dots i {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: dot-bounce 1.1s ease-in-out infinite;
+}
+
+.chip-dots i:nth-child(2) {
+  animation-delay: 150ms;
+}
+
+.chip-dots i:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+.icon-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--chip-bg);
+  color: var(--chip-fg);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    transform 120ms ease;
+}
+
+.icon-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.icon-btn:active {
+  transform: scale(0.92);
+}
+
+.icon-btn.stop:hover {
+  background: var(--danger);
+}
+
+/* ---- body: messages -------------------------------------------------------------------------------- */
+.bubble-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(420px, 48vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.bubble-body:empty,
+.bubble-body:not(:has(.msg:not([hidden]))) {
+  display: none;
+}
+
+.msg {
+  overflow-wrap: anywhere;
+}
+
+.msg-user {
+  color: var(--bubble-muted);
+  font-size: 0.86em;
+  white-space: pre-wrap;
+}
+
+.msg-user::before {
+  content: '› ';
+  color: var(--pink-deep);
+  font-weight: 700;
+}
+
+.msg-assistant {
+  white-space: pre-wrap;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+.msg-assistant.streaming::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  border-radius: 1px;
+  background: var(--accent);
+  animation: caret-blink 1s steps(2, start) infinite;
+}
+
+mark.spoken {
+  background: linear-gradient(transparent 62%, rgba(244, 114, 182, 0.28) 62%);
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  border-radius: 2px;
+}
+
+.msg-tool {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.82em;
+  color: var(--bubble-muted);
+}
+
+.msg-tool-icon {
+  flex: none;
+}
+
+.msg-tool-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msg-error {
+  font-size: 0.86em;
+  color: var(--error-fg);
+  background: var(--error-bg);
+  border-left: 3px solid var(--danger);
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+
+/* ---- confirm panel ---------------------------------------------------------------------------------- */
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--bubble-divider);
+  outline: none;
+}
+
+.confirm-title {
+  font-weight: 600;
+}
+
+.confirm[data-danger='true'] .confirm-title::before {
+  content: '⚠ ';
+  color: var(--danger);
+}
+
+.confirm-detail {
+  font-size: 0.9em;
+  color: var(--bubble-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.confirm-preview {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 7.5em;
+  overflow: auto;
+  border-radius: 10px;
+  background: var(--code-bg);
+  font-family: 'Cascadia Mono', Consolas, 'Courier New', monospace;
+  font-size: 0.8em;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+  scrollbar-width: thin;
+}
+
+.confirm-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-hint {
+  margin-right: auto;
+  font-size: 0.74em;
+  color: var(--bubble-muted);
+  white-space: nowrap;
+}
+
+.btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 16px;
+  font: inherit;
+  font-size: 0.9em;
+  font-weight: 600;
+  line-height: 1.3;
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    filter 120ms ease;
+}
+
+.btn:hover {
+  filter: brightness(1.06);
+}
+
+.btn:active {
+  transform: scale(0.96);
+}
+
+.btn:focus-visible,
+.icon-btn:focus-visible,
+.btn-send:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn-yes {
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--pink));
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.35);
+}
+
+.confirm[data-danger='true'] .btn-yes {
+  background: linear-gradient(135deg, var(--danger), var(--pink-deep));
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.btn-no {
+  color: var(--bubble-fg);
+  background: var(--chip-bg);
+}
+
+/* ---- chat input -------------------------------------------------------------------------------------- */
+.chat {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--bubble-divider);
+}
+
+.chat-input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: var(--input-bg);
+  color: inherit;
+  font: inherit;
+  line-height: 1.4;
+  resize: none;
+  overflow-y: auto;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+  scrollbar-width: thin;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.chat-input::placeholder {
+  color: var(--bubble-muted);
+}
+
+.chat-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.18);
+}
+
+.btn-send {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--pink));
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.35);
+  font: inherit;
+  font-size: 13px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    filter 120ms ease;
+}
+
+.btn-send:hover {
+  filter: brightness(1.06);
+}
+
+.btn-send:active {
+  transform: scale(0.94);
+}
+
+/* ---- animations ---------------------------------------------------------------------------------- */
+@keyframes chip-pulse {
+  0% {
+    box-shadow: 0 0 0 0 currentColor;
+    opacity: 1;
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+    opacity: 0.85;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    opacity: 1;
+  }
+}
+
+@keyframes eq-bar {
+  from {
+    transform: scaleY(calc(0.15 + 0.55 * var(--level)));
+  }
+  to {
+    transform: scaleY(calc(0.3 + 0.7 * var(--level)));
+  }
+}
+
+@keyframes dot-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@keyframes caret-blink {
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bubble,
+  .bubble *,
+  .bubble *::before,
+  .bubble *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }

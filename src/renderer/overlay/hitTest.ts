@@ -109,5 +109,6 @@ function round2(v: number): number {
 }
 
 function round3(v: number): number {
-  return Math.round(v * 1000) / 1000
+  const r = Math.round(v * 1000) / 1000
+  return r === 0 ? 0 : r // normalise -0
 }

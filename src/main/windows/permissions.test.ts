@@ -54,9 +54,8 @@ describe('decidePermission', () => {
   })
 
   it('denies everything else', () => {
-    for (const p of ['geolocation', 'notifications', 'display-capture', 'usb', 'hid', 'fullscreen', 'openExternal', 'unknown']) {
-      expect(decidePermission(p, own)).toBe(false)
-    }
+    const denied = ['geolocation', 'notifications', 'display-capture', 'usb', 'hid', 'fullscreen', 'openExternal', 'unknown']
+    for (const p of denied) expect(decidePermission(p, own), p).toBe(false)
   })
 })
 
@@ -96,9 +95,10 @@ describe('installPermissionHandlers', () => {
     const cb = (granted: boolean): void => {
       results.push(granted)
     }
-    ses.request?.(webContents, 'media', cb, { requestingUrl: webContents.getURL(), isMainFrame: true, mediaTypes: ['audio'] })
-    ses.request?.(webContents, 'media', cb, { requestingUrl: webContents.getURL(), isMainFrame: true, mediaTypes: ['video'] })
-    ses.request?.(webContents, 'geolocation', cb, { requestingUrl: webContents.getURL(), isMainFrame: true })
+    const own = { requestingUrl: webContents.getURL(), isMainFrame: true }
+    ses.request?.(webContents, 'media', cb, { ...own, mediaTypes: ['audio'] })
+    ses.request?.(webContents, 'media', cb, { ...own, mediaTypes: ['video'] })
+    ses.request?.(webContents, 'geolocation', cb, own)
     ses.request?.(webContents, 'clipboard-read', cb, { requestingUrl: 'https://evil.example', isMainFrame: true })
     // Falls back to the webContents URL when requestingUrl is empty.
     ses.request?.(webContents, 'speaker-selection', cb, { requestingUrl: '', isMainFrame: true })
@@ -110,7 +110,8 @@ describe('installPermissionHandlers', () => {
     expect(ses.check?.(null, 'media', 'https://evil.example', { isMainFrame: true, mediaType: 'audio' })).toBe(false)
     expect(ses.check?.(null, 'notifications', 'file://', { isMainFrame: true })).toBe(false)
     // requestingUrl wins over the origin when present.
-    expect(ses.check?.(null, 'clipboard-read', 'https://evil.example', { isMainFrame: true, requestingUrl: 'http://localhost:5173/x' })).toBe(true)
+    const viaDevServer = { isMainFrame: true, requestingUrl: 'http://localhost:5173/x' }
+    expect(ses.check?.(null, 'clipboard-read', 'https://evil.example', viaDevServer)).toBe(true)
   })
 
   it('tolerates a webContents whose getURL throws', () => {

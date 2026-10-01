@@ -180,11 +180,13 @@ export function createOverlayWindow(options: OverlayOptions): OverlayWindow {
   // ---- visibility --------------------------------------------------------------------------------
   /** Logical state ("the character is shown"); the window may additionally be hidden for a capture. */
   let wantVisible = true
-  let pageReady = false
+  /** True once 'ready-to-show' or 'did-finish-load' fired – before that showInactive() would show an empty window. */
+  let pageLoaded = false
   let disposed = false
 
   function showIfWanted(): void {
     if (disposed || win.isDestroyed()) return
+    pageLoaded = true
     if (wantVisible && !win.isVisible()) win.showInactive()
     updateTimers()
   }
@@ -241,7 +243,8 @@ export function createOverlayWindow(options: OverlayOptions): OverlayWindow {
       current.height !== workArea.height
     ) {
       win.setBounds({ ...workArea })
-      log.info(`fitted to display ${display.id} work area ${workArea.width}x${workArea.height}@${workArea.x},${workArea.y}`)
+      const { x, y, width, height } = workArea
+      log.info(`fitted to display ${display.id} work area ${width}x${height}@${x},${y}`)
     }
     lastCursor = null // bounds changed → re-send the cursor position
     if (win.isVisible()) win.setAlwaysOnTop(true, 'screen-saver')
@@ -264,7 +267,6 @@ export function createOverlayWindow(options: OverlayOptions): OverlayWindow {
   // ---- page load ---------------------------------------------------------------------------------
   win.once('ready-to-show', showIfWanted)
   win.webContents.on('did-finish-load', () => {
-    pageReady = true
     // Mouse forwarding is lost after (re)loads (electron#15376) – re-apply the current mode.
     applyClickThrough()
     showIfWanted()
@@ -292,7 +294,7 @@ export function createOverlayWindow(options: OverlayOptions): OverlayWindow {
     if (win.isDestroyed()) return
     wantVisible = visible
     if (visible) {
-      if (pageReady) win.showInactive()
+      if (pageLoaded) win.showInactive()
     } else {
       win.hide()
     }

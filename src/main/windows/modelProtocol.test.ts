@@ -28,6 +28,11 @@ const net = electronNet as unknown as { fetch: (input: string, init?: RequestIni
 
 let tmp: string
 
+/** net.fetch stand-in that reads the file:// URL from disk without a Content-Type header. */
+async function serveWithoutContentType(input: string): Promise<Response> {
+  return new Response(fs.readFileSync(fileURLToPath(input)))
+}
+
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'flowy-model-'))
   protocol._reset()
@@ -44,7 +49,9 @@ describe('safeJoin', () => {
   it('joins relative paths inside the root', () => {
     expect(safeJoin('/models/haru', 'haru.model3.json')).toBe('/models/haru/haru.model3.json')
     expect(safeJoin('/models/haru', 'haru.2048/texture_00.png')).toBe('/models/haru/haru.2048/texture_00.png')
-    expect(safeJoin('/models/haru', 'motions/../expressions/f01.exp3.json')).toBe('/models/haru/expressions/f01.exp3.json')
+    expect(safeJoin('/models/haru', 'motions/../expressions/f01.exp3.json')).toBe(
+      '/models/haru/expressions/f01.exp3.json',
+    )
     expect(safeJoin('/models/haru/', './haru.moc3')).toBe('/models/haru/haru.moc3')
     expect(safeJoin('/models/haru', '..foo/bar')).toBe('/models/haru/..foo/bar')
   })
@@ -180,7 +187,7 @@ describe('request handler', () => {
     fs.mkdirSync(dir)
     fs.writeFileSync(path.join(dir, 'x.moc3'), 'moc')
     fs.writeFileSync(path.join(dir, 'x.model3.json'), '{}')
-    vi.spyOn(net, 'fetch').mockImplementation(async (input: string) => new Response(fs.readFileSync(fileURLToPath(input))))
+    vi.spyOn(net, 'fetch').mockImplementation(serveWithoutContentType)
     const handler = createModelRequestHandler(() => dir)
     const moc = await handler(new Request('flowy-model://model/x.moc3'))
     expect(moc.headers.get('content-type')).toBe('application/octet-stream')
@@ -232,7 +239,7 @@ describe('registerModelProtocol', () => {
     const dir = path.join(tmp, 'r')
     fs.mkdirSync(dir)
     fs.writeFileSync(path.join(dir, 'm.model3.json'), '{"ok":true}')
-    vi.spyOn(net, 'fetch').mockImplementation(async (input: string) => new Response(fs.readFileSync(fileURLToPath(input))))
+    vi.spyOn(net, 'fetch').mockImplementation(serveWithoutContentType)
     registerModelProtocol.registerHandler(() => dir)
     const handler = protocol._handlers.get(MODEL_SCHEME)
     expect(handler).toBeTypeOf('function')
@@ -293,7 +300,9 @@ describe('findDefaultModelJson', () => {
 describe('modelUrlFor / contentTypeFor', () => {
   it('builds the renderer URL from the basename, percent-encoded', () => {
     expect(modelUrlFor('/models/haru/haru.model3.json')).toBe('flowy-model://model/haru.model3.json')
-    expect(modelUrlFor('C:\\Users\\me\\My Model\\my model.model3.json')).toMatch(/^flowy-model:\/\/model\/.*my%20model\.model3\.json$/)
+    expect(modelUrlFor('C:\\Users\\me\\My Model\\my model.model3.json')).toMatch(
+      /^flowy-model:\/\/model\/.*my%20model\.model3\.json$/,
+    )
     expect(modelUrlFor('/m/はる.model3.json')).toBe('flowy-model://model/%E3%81%AF%E3%82%8B.model3.json')
   })
 
