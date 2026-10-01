@@ -172,8 +172,13 @@ export class BrowserWindow extends EventEmitter {
   webContents = Object.assign(new EventEmitter(), {
     id: nextWebContentsId++,
     _sent: [] as Array<{ channel: string; payload: unknown }>,
+    _executed: [] as string[],
     send(channel: string, payload?: unknown): void {
       this._sent.push({ channel, payload })
+    },
+    executeJavaScript(code: string): Promise<unknown> {
+      this._executed.push(code)
+      return Promise.resolve(undefined)
     },
     isDestroyed: (): boolean => this._destroyed,
     getURL: (): string => (this.options['_url'] as string | undefined) ?? 'file:///out/renderer/overlay/index.html',
@@ -217,8 +222,8 @@ export class BrowserWindow extends EventEmitter {
     this.options['_url'] = url
     return Promise.resolve()
   }
-  loadFile(file: string): Promise<void> {
-    this.record('loadFile', file)
+  loadFile(file: string, options?: unknown): Promise<void> {
+    this.record('loadFile', file, options)
     return Promise.resolve()
   }
   show(): void {
@@ -314,11 +319,103 @@ export const net = {
   isOnline: (): boolean => true,
 }
 
-export const shell = { openExternal: async () => undefined, openPath: async () => '' }
-export const clipboard = { readText: () => '', writeText: () => undefined }
+/**
+ * Recording shell mock: `_opened` (openPath), `_external` (openExternal), `_trashed` (trashItem).
+ * `_openPathError` is returned by openPath (Electron returns '' on success, a message on failure);
+ * `_trashError` makes trashItem reject. `_reset()` clears everything.
+ */
+export const shell = {
+  _opened: [] as string[],
+  _external: [] as string[],
+  _trashed: [] as string[],
+  _openPathError: '',
+  _trashError: null as Error | null,
+  openExternal: async (url: string): Promise<void> => {
+    shell._external.push(url)
+  },
+  openPath: async (p: string): Promise<string> => {
+    shell._opened.push(p)
+    return shell._openPathError
+  },
+  trashItem: async (p: string): Promise<void> => {
+    if (shell._trashError) throw shell._trashError
+    shell._trashed.push(p)
+  },
+  showItemInFolder: (): void => undefined,
+  _reset(): void {
+    shell._opened = []
+    shell._external = []
+    shell._trashed = []
+    shell._openPathError = ''
+    shell._trashError = null
+  },
+}
+/** Async like Electron 44; `_text` holds the clipboard content. */
+export const clipboard = {
+  _text: '',
+  readText: async (): Promise<string> => clipboard._text,
+  writeText: async (text: string): Promise<void> => {
+    clipboard._text = text
+  },
+  _reset(): void {
+    clipboard._text = ''
+  },
+}
 export const dialog = { showOpenDialog: async () => ({ canceled: true, filePaths: [] }), showErrorBox: () => undefined }
-export const nativeImage = { createFromPath: () => ({}), createFromBuffer: () => ({}) }
-export const desktopCapturer = { getSources: async () => [] }
+/**
+ * Minimal NativeImage stand-in: `resize` returns a new fake with the requested size, `toJPEG`/`toPNG`
+ * return small buffers whose first bytes identify the format (`FF D8` / `89 50`).
+ */
+export interface FakeNativeImage {
+  _resizeCalls: Array<{ width?: number; height?: number; quality?: string }>
+  isEmpty(): boolean
+  getSize(): { width: number; height: number }
+  resize(options: { width?: number; height?: number; quality?: string }): FakeNativeImage
+  toJPEG(quality: number): Buffer
+  toPNG(): Buffer
+}
+
+export function createFakeNativeImage(width: number, height: number): FakeNativeImage {
+  const image: FakeNativeImage = {
+    _resizeCalls: [],
+    isEmpty: () => width === 0 || height === 0,
+    getSize: () => ({ width, height }),
+    resize(options) {
+      image._resizeCalls.push(options)
+      const next = createFakeNativeImage(options.width ?? width, options.height ?? height)
+      next._resizeCalls = image._resizeCalls
+      return next
+    },
+    toJPEG: (quality: number) => Buffer.from([0xff, 0xd8, 0xff, quality & 0xff, width & 0xff, height & 0xff]),
+    toPNG: () => Buffer.from([0x89, 0x50, 0x4e, 0x47, width & 0xff, height & 0xff]),
+  }
+  return image
+}
+
+export const nativeImage = {
+  createEmpty: () => createFakeNativeImage(0, 0),
+  createFromPath: () => createFakeNativeImage(0, 0),
+  createFromBuffer: () => createFakeNativeImage(0, 0),
+}
+
+/**
+ * Recording desktopCapturer: tests push fake sources into `_sources` and inspect `_lastOptions`.
+ */
+export const desktopCapturer = {
+  _sources: [] as Array<{ id: string; name: string; display_id: string; thumbnail: FakeNativeImage }>,
+  _lastOptions: null as null | { types: string[]; thumbnailSize?: { width: number; height: number } },
+  _error: null as Error | null,
+  async getSources(options: { types: string[]; thumbnailSize?: { width: number; height: number } }) {
+    desktopCapturer._lastOptions = options
+    if (desktopCapturer._error) throw desktopCapturer._error
+    return desktopCapturer._sources
+  },
+  _reset(): void {
+    desktopCapturer._sources = []
+    desktopCapturer._lastOptions = null
+    desktopCapturer._error = null
+  },
+}
 /** Recording protocol mock: `_schemes` from registerSchemesAsPrivileged, `_handlers` from handle(). */
 export const protocol = {
   _schemes: [] as Array<{ scheme: string; privileges?: Record<string, boolean> }>,
@@ -340,15 +437,85 @@ export const protocol = {
     protocol._handlers.clear()
   },
 }
-export const Menu = { buildFromTemplate: () => ({ popup: () => undefined }) }
-export const Tray = class {
-  setToolTip(): void {}
-  setContextMenu(): void {}
-  on(): void {}
-  destroy(): void {}
+/** Recording Menu mock: `buildFromTemplate` returns an object holding its `template`; `Menu._popups` lists popup calls. */
+export interface MockMenu {
+  template: unknown[]
+  popup(options?: unknown): void
+  _popups: unknown[]
 }
+export const Menu = {
+  _popups: [] as Array<{ menu: MockMenu; options: unknown }>,
+  buildFromTemplate(template: unknown[]): MockMenu {
+    const menu: MockMenu = {
+      template,
+      _popups: [],
+      popup(options?: unknown): void {
+        menu._popups.push(options)
+        Menu._popups.push({ menu, options })
+      },
+    }
+    return menu
+  },
+  setApplicationMenu(): void {},
+  _reset(): void {
+    Menu._popups = []
+  },
+}
+/**
+ * Recording Tray mock: `Tray._instances` lists every tray created since `Tray._reset()`; each remembers its
+ * image, tooltip, context menu, listeners and whether it was destroyed.
+ */
+export const Tray = class {
+  static _instances: InstanceType<typeof Tray>[] = []
+  static _reset(): void {
+    Tray._instances = []
+  }
+  _tooltip = ''
+  _menu: unknown = null
+  _destroyed = false
+  readonly _listeners = new Map<string, Array<(...args: unknown[]) => void>>()
+  constructor(readonly image: unknown) {
+    Tray._instances.push(this)
+  }
+  setToolTip(tooltip: string): void {
+    this._tooltip = tooltip
+  }
+  setContextMenu(menu: unknown): void {
+    this._menu = menu
+  }
+  setImage(): void {}
+  on(event: string, listener: (...args: unknown[]) => void): this {
+    const list = this._listeners.get(event) ?? []
+    list.push(listener)
+    this._listeners.set(event, list)
+    return this
+  }
+  _emit(event: string, ...args: unknown[]): void {
+    for (const l of this._listeners.get(event) ?? []) l(...args)
+  }
+  isDestroyed(): boolean {
+    return this._destroyed
+  }
+  destroy(): void {
+    this._destroyed = true
+  }
+}
+/** Recording Notification mock: `Notification._shown` lists the options of every shown notification. */
 export const Notification = class {
-  show(): void {}
+  static _shown: Array<Record<string, unknown>> = []
+  static isSupported(): boolean {
+    return true
+  }
+  static _reset(): void {
+    Notification._shown = []
+  }
+  constructor(readonly options: Record<string, unknown> = {}) {}
+  show(): void {
+    Notification._shown.push(this.options)
+  }
+  on(): this {
+    return this
+  }
 }
 
 export default {
