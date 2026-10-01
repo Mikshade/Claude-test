@@ -1,14 +1,14 @@
 import { resolve } from 'node:path'
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import { defineConfig } from 'electron-vite'
 
 // Three bundles: main (Node/Electron), preload (sandboxed bridge), renderer (two pages).
+// Dependencies are externalized by default in electron-vite 5 (build.externalizeDeps), so no plugin is needed;
+// the preload only imports 'electron' and bundled @shared sources, which is what a sandboxed preload allows.
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
     resolve: { alias: { '@shared': resolve(__dirname, 'src/shared') } },
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
     resolve: { alias: { '@shared': resolve(__dirname, 'src/shared') } },
   },
   renderer: {
