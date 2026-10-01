@@ -81,23 +81,27 @@ export interface FieldOptions {
 export function field(label: string, control: Child, options: FieldOptions = {}): FieldElement {
   const hint = el('p', { class: 'field-hint' })
   const warning = el('p', { class: 'field-warning', role: 'alert' })
-  const node = el(
-    'div',
-    { class: `field${options.inline ? ' field-inline' : ''}` },
-    el('label', { class: 'field-label' }, label),
-    el('div', { class: 'field-control' }, control),
-    hint,
-    warning,
-  ) as FieldElement
-  node.setHint = (text) => {
-    hint.textContent = text ?? ''
-    hint.hidden = !text
-  }
-  node.setWarning = (text) => {
-    warning.textContent = text ?? ''
-    warning.hidden = !text
-    node.classList.toggle('has-warning', Boolean(text))
-  }
+  const node: FieldElement = Object.assign(
+    el(
+      'div',
+      { class: `field${options.inline ? ' field-inline' : ''}` },
+      el('label', { class: 'field-label' }, label),
+      el('div', { class: 'field-control' }, control),
+      hint,
+      warning,
+    ),
+    {
+      setHint(text: string | null): void {
+        hint.textContent = text ?? ''
+        hint.hidden = !text
+      },
+      setWarning(text: string | null): void {
+        warning.textContent = text ?? ''
+        warning.hidden = !text
+        node.classList.toggle('has-warning', Boolean(text))
+      },
+    },
+  )
   node.setHint(options.hint ?? null)
   node.setWarning(options.warning ?? null)
   return node
@@ -215,11 +219,12 @@ export function slider(options: SliderOptions): SliderElement {
     options.onInput?.(v)
   })
   input.addEventListener('change', () => options.onCommit?.(parse()))
-  const node = el('div', { class: 'slider' }, input, output) as SliderElement
-  node.setValue = (value) => {
-    input.value = String(value)
-    output.textContent = format(value)
-  }
+  const node: SliderElement = Object.assign(el('div', { class: 'slider' }, input, output), {
+    setValue(value: number): void {
+      input.value = String(value)
+      output.textContent = format(value)
+    },
+  })
   return node
 }
 

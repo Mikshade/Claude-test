@@ -58,8 +58,11 @@ The GUI only runs on Windows (`npm run dev` / `npm run dist`).
 
 - One `BrowserWindow` sized to the chosen display's **work area** (never `fullscreen: true` – that
   breaks transparency on Windows). `transparent: true, frame: false, hasShadow: false,
-  resizable: false, skipTaskbar: true, focusable: false` plus `setAlwaysOnTop(true, 'screen-saver')`
-  and `setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })`.
+  resizable: false, skipTaskbar: true, focusable: true` plus `setAlwaysOnTop(true, 'screen-saver')`
+  and `setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })`. The window must be focusable
+  because the chat input needs keyboard focus, but it never takes focus on its own: it is only shown
+  with `showInactive()`, and `focus()` is called only from `overlay:setFocus(true)` (chat opened by
+  the user); `setFocus(false)` blurs so the previous app gets focus back.
 - `webPreferences`: `preload`, `contextIsolation: true`, `sandbox: true`,
   `additionalArguments: ['--flowy-page=overlay']`, `backgroundThrottling: false`.
 - Click-through: `setIgnoreMouseEvents(true, { forward: true })` by default. With `forward: true`

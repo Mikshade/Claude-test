@@ -4,7 +4,7 @@
  * OWNER: integration agent (keep this file the only place that knows about every module).
  */
 import path from 'node:path'
-import { app, BrowserWindow, dialog, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, dialog, safeStorage, screen, shell } from 'electron'
 import { redactConfig } from '@shared/config'
 import { buildSystemPrompt } from '@shared/personality'
 import { createAgent, type Agent } from './brain/agent'
@@ -173,7 +173,20 @@ async function bootstrap(): Promise<void> {
     settings.open(page)
   })
   handle('app:relaunchElevated', () => relaunchElevated())
-  handle('app:openExternal', (_e, url) => shell.openExternal(url))
+  handle('app:openExternal', (_e, url) => {
+    if (!/^https?:\/\//i.test(url)) throw new Error('Nur http(s)-Links können geöffnet werden.')
+    return shell.openExternal(url)
+  })
+  handle('app:getDisplays', () => {
+    const primary = screen.getPrimaryDisplay()
+    return screen.getAllDisplays().map((d, i) => ({
+      id: d.id,
+      label: `${d.label || `Display ${i + 1}`} (${d.size.width}×${d.size.height})`,
+      bounds: d.bounds,
+      primary: d.id === primary.id,
+    }))
+  })
+  handle('app:closeSettings', () => settings.close())
 
   handle('config:get', () => store.get())
   handle('config:patch', (_e, patch) => store.patch(patch))
@@ -202,12 +215,27 @@ async function bootstrap(): Promise<void> {
     })
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
+  handle('config:pickFile', async (e, filters) => {
+    const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
+    const result = await dialog.showOpenDialog(win as BrowserWindow, {
+      title: 'Datei auswählen',
+      filters: filters && filters.length ? filters : [{ name: 'Alle Dateien', extensions: ['*'] }],
+      properties: ['openFile'],
+    })
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
 
   handle('overlay:setInteractive', (_e, interactive) => overlay?.setInteractive(interactive))
   handle('overlay:setFocus', (_e, focused) => overlay?.setFocus(focused))
   handle('overlay:reportBounds', () => undefined)
   handle('overlay:showContextMenu', () => {
-    void import('./windows/contextMenu').then((m) => m.showCharacterMenu(overlay?.window ?? null, trayActions))
+    void import('./windows/contextMenu').then((m) =>
+      m.showCharacterMenu(overlay?.window ?? null, trayActions, {
+        config: store.get(),
+        flags: { visible: overlay?.isVisible() ?? false, muted },
+        state: orchestrator.state(),
+      }),
+    )
   })
 
   handle('turn:submitAudio', (_e, audio) => orchestrator.submitAudio(audio))

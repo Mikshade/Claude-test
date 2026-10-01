@@ -43,6 +43,18 @@ export interface ChatMessageView {
   at: number
 }
 
+export interface DisplayInfo {
+  id: number
+  label: string
+  bounds: Rect
+  primary: boolean
+}
+
+export interface FileFilter {
+  name: string
+  extensions: string[]
+}
+
 export interface AppInfo {
   version: string
   platform: 'win32' | 'darwin' | 'linux' | string
@@ -60,6 +72,8 @@ export interface Invoke {
   'app:openSettings': { args: [page?: string]; result: void }
   'app:relaunchElevated': { args: []; result: void }
   'app:openExternal': { args: [url: string]; result: void }
+  'app:getDisplays': { args: []; result: DisplayInfo[] }
+  'app:closeSettings': { args: []; result: void }
 
   'config:get': { args: []; result: FlowyConfig }
   'config:patch': { args: [patch: DeepPartial<FlowyConfig>]; result: FlowyConfig }
@@ -69,6 +83,8 @@ export interface Invoke {
   'config:testStt': { args: [audio: RecordedAudio]; result: TestResult }
   'config:searchVoices': { args: [query: string]; result: VoiceInfo[] }
   'config:pickModelFile': { args: []; result: string | null }
+  /** Generic open-file dialog (e.g. for a voice clone sample). */
+  'config:pickFile': { args: [filters?: FileFilter[]]; result: string | null }
 
   /** Overlay tells main whether the cursor is over the character (controls click-through). */
   'overlay:setInteractive': { args: [interactive: boolean]; result: void }
@@ -134,6 +150,8 @@ export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   'app:openSettings',
   'app:relaunchElevated',
   'app:openExternal',
+  'app:getDisplays',
+  'app:closeSettings',
   'config:get',
   'config:patch',
   'config:completeSetup',
@@ -142,6 +160,7 @@ export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   'config:testStt',
   'config:searchVoices',
   'config:pickModelFile',
+  'config:pickFile',
   'overlay:setInteractive',
   'overlay:setFocus',
   'overlay:reportBounds',

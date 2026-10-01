@@ -73,7 +73,9 @@ describe('hashScript', () => {
 })
 
 describe('createSettingsWindowManager', () => {
-  const originalDevUrl = process.env['ELECTRON_RENDERER_URL']
+  /** electron-vite's types mark ELECTRON_RENDERER_URL read-only; tests need to set it. */
+  const env = process.env as Record<string, string | undefined>
+  const originalDevUrl = env['ELECTRON_RENDERER_URL']
   let managers: SettingsWindowManager[] = []
 
   function make(): SettingsWindowManager {
@@ -84,13 +86,13 @@ describe('createSettingsWindowManager', () => {
 
   beforeEach(() => {
     Win._reset()
-    delete process.env['ELECTRON_RENDERER_URL']
+    delete env['ELECTRON_RENDERER_URL']
   })
   afterEach(() => {
     for (const m of managers) m.close()
     managers = []
-    if (originalDevUrl === undefined) delete process.env['ELECTRON_RENDERER_URL']
-    else process.env['ELECTRON_RENDERER_URL'] = originalDevUrl
+    if (originalDevUrl === undefined) delete env['ELECTRON_RENDERER_URL']
+    else env['ELECTRON_RENDERER_URL'] = originalDevUrl
   })
 
   it('creates a sandboxed 980x720 window and shows it on ready-to-show', () => {
@@ -133,7 +135,7 @@ describe('createSettingsWindowManager', () => {
   })
 
   it('loads from the dev server in dev', () => {
-    process.env['ELECTRON_RENDERER_URL'] = 'http://localhost:5173'
+    env['ELECTRON_RENDERER_URL'] = 'http://localhost:5173'
     const win = make().open('about') as unknown as MockWindow
     expect(calls(win, 'loadURL')).toEqual([['http://localhost:5173/settings/index.html#about']])
     expect(calls(win, 'loadFile')).toEqual([])

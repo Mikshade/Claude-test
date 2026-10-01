@@ -39,8 +39,8 @@ function config(partial: { pinned?: boolean; language?: 'de' | 'en' } = {}): Flo
   return c
 }
 
-function labels(template: Array<Record<string, unknown>>): Array<string | undefined> {
-  return template.map((item) => (item['type'] === 'separator' ? '---' : (item['label'] as string)))
+function labels(template: ReadonlyArray<{ type?: string; label?: string }>): Array<string | undefined> {
+  return template.map((item) => (item.type === 'separator' ? '---' : item.label))
 }
 
 describe('TRAY_STRINGS', () => {
