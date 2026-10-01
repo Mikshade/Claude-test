@@ -25,7 +25,7 @@ import { createSttClient } from './stt'
 import { createTtsClient } from './tts'
 import { createOverlayWindow, type OverlayWindow } from './windows/overlay'
 import { createSettingsWindowManager } from './windows/settings'
-import { registerModelProtocol } from './windows/modelProtocol'
+import { findDefaultModelJson, registerModelProtocol } from './windows/modelProtocol'
 
 const log = createLogger('main')
 
@@ -102,6 +102,7 @@ async function bootstrap(): Promise<void> {
     tts: () => tts,
     stt: () => stt,
     system,
+    notes,
     captureScreen: screenshot.captureScreen,
   })
   // Tools ask the user through the orchestrator's confirm UI.
@@ -150,7 +151,7 @@ async function bootstrap(): Promise<void> {
     platform: process.platform,
     elevated: await system.isElevated(),
     userDataPath: app.getPath('userData'),
-    defaultModelPath: path.join(bundledModelsDir(), DEFAULT_MODEL_DIRNAME),
+    defaultModelPath: findDefaultModelJson(path.join(bundledModelsDir(), DEFAULT_MODEL_DIRNAME)) ?? '',
     live2dCoreAvailable: registerModelProtocol.coreAvailable(),
   }))
   handle('app:quit', () => app.quit())
