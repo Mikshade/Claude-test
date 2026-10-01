@@ -43,11 +43,40 @@ export const screen = {
   on: () => undefined,
 }
 
+/**
+ * Recording globalShortcut: remembers registered accelerators and their callbacks.
+ * Test helpers (underscore-prefixed): `_registered` map, `_failing` set (accelerators whose
+ * registration returns false, e.g. "taken by another app"), `_press(accelerator)` to simulate a
+ * key press, `_reset()` to clear everything between tests.
+ */
 export const globalShortcut = {
-  register: () => true,
-  unregister: () => undefined,
-  unregisterAll: () => undefined,
-  isRegistered: () => false,
+  _registered: new Map<string, () => void>(),
+  _failing: new Set<string>(),
+  register(accelerator: string, callback: () => void): boolean {
+    if (!accelerator || globalShortcut._failing.has(accelerator)) return false
+    if (globalShortcut._registered.has(accelerator)) return false
+    globalShortcut._registered.set(accelerator, callback)
+    return true
+  },
+  unregister(accelerator: string): void {
+    globalShortcut._registered.delete(accelerator)
+  },
+  unregisterAll(): void {
+    globalShortcut._registered.clear()
+  },
+  isRegistered(accelerator: string): boolean {
+    return globalShortcut._registered.has(accelerator)
+  },
+  _press(accelerator: string): boolean {
+    const callback = globalShortcut._registered.get(accelerator)
+    if (!callback) return false
+    callback()
+    return true
+  },
+  _reset(): void {
+    globalShortcut._registered.clear()
+    globalShortcut._failing.clear()
+  },
 }
 
 export class BrowserWindow extends EventEmitter {
