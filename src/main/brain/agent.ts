@@ -243,6 +243,8 @@ export function createAgent(options: AgentOptions): Agent {
     }
     const ctx = toolContextFactory(signal, callbacks)
     getClient() // fail early (missing key) before touching the history
+    // Screenshots of earlier turns become text placeholders: they are only sent with the turn that took them.
+    history.redactImages()
     history.append(buildUserMessage(input))
     let text = ''
     try {

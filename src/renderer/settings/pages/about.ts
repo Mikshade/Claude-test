@@ -3,7 +3,7 @@
  *
  * OWNER: settings-ui agent.
  */
-import { LINKS } from '../catalog'
+import { LINKS, LIVE2D_SAMPLE_CREDIT } from '../catalog'
 import { t } from '../i18n'
 import { asyncButton, button, el, link, section, statusLine } from '../ui'
 import type { Page } from './context'
@@ -74,6 +74,19 @@ export const aboutPage: Page = {
       }),
     )
 
-    return el('div', { class: 'page' }, facts, history, links)
+    // Required by the Live2D Free Material License (bundled sample model) – verbatim, in every UI language.
+    const live2d = section(
+      t('about.live2d'),
+      null,
+      el('p', { class: 'live2d-credit', lang: 'en' }, LIVE2D_SAMPLE_CREDIT),
+      el(
+        'ul',
+        { class: 'link-list' },
+        el('li', null, link(t('about.live2dFreeMaterial'), LINKS.live2dFreeMaterialLicense)),
+        el('li', null, link(t('about.live2dProprietary'), LINKS.live2dProprietaryLicense)),
+      ),
+    )
+
+    return el('div', { class: 'page' }, facts, history, links, live2d)
   },
 }

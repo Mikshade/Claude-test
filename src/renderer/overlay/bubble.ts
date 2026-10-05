@@ -76,10 +76,10 @@ export interface BubbleController {
   hide(delayMs?: number): void
   setFontSize(px: number): void
   setLanguage(language: Language): void
-  /** Override the colour scheme ('auto' = prefers-color-scheme). Optional so stand-ins stay minimal. */
-  setTheme?(theme: 'auto' | 'light' | 'dark'): void
-  isConfirmPending?(): boolean
-  isVisible?(): boolean
+  /** Override the colour scheme ('auto' = prefers-color-scheme). */
+  setTheme(theme: 'auto' | 'light' | 'dark'): void
+  isConfirmPending(): boolean
+  isVisible(): boolean
   dispose(): void
 }
 

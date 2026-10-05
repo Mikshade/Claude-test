@@ -60,6 +60,7 @@ export interface AppInfo {
   platform: 'win32' | 'darwin' | 'linux' | string
   elevated: boolean
   userDataPath: string
+  /** Absolute path of the bundled default `*.model3.json`, or '' when no model was set up. */
   defaultModelPath: string
   /** Whether the Cubism Core runtime was found locally. */
   live2dCoreAvailable: boolean
@@ -93,9 +94,14 @@ export interface Invoke {
   /** Overlay reports the character's current screen rect (for context menus / bubbles). */
   'overlay:reportBounds': { args: [rect: Rect]; result: void }
   'overlay:showContextMenu': { args: []; result: void }
+  /** The overlay runtime (character, bubble, audio) is up and replaying queued pushes – main may start the greeting. */
+  'overlay:ready': { args: []; result: void }
 
-  /** Recording finished in the renderer; main runs STT + brain + TTS. Returns the turn id. */
-  'turn:submitAudio': { args: [audio: RecordedAudio]; result: string }
+  /**
+   * Recording finished in the renderer; main runs STT + brain + TTS. Returns the turn id.
+   * `null` = nothing usable was recorded (too short / no speech / mic failed) – main just stops listening.
+   */
+  'turn:submitAudio': { args: [audio: RecordedAudio | null]; result: string }
   /** Typed text from the chat input. Returns the turn id. */
   'turn:submitText': { args: [text: string]; result: string }
   /** Stop speaking / cancel the current turn. */
@@ -122,8 +128,11 @@ export interface Push {
   'turn:error': TurnError
   'speech:chunk': SpeechChunk
   'speech:stop': { turnId?: string }
+  /** Start recording for the given (non-empty) turn id. */
   'ptt:start': { turnId: string }
   'ptt:stop': Record<string, never>
+  /** Open the chat text input (hotkeys.openChat), optionally pre-filled. */
+  'chat:open': { prefill?: string }
   'emotion:set': { emotion: Emotion; holdMs?: number }
   'avatar:fly': { reason: 'cursor' | 'user' | 'window' }
   'avatar:setVisible': boolean
@@ -165,6 +174,7 @@ export const INVOKE_CHANNELS: readonly InvokeChannel[] = [
   'overlay:setFocus',
   'overlay:reportBounds',
   'overlay:showContextMenu',
+  'overlay:ready',
   'turn:submitAudio',
   'turn:submitText',
   'turn:interrupt',
@@ -188,6 +198,7 @@ export const PUSH_CHANNELS: readonly PushChannel[] = [
   'speech:stop',
   'ptt:start',
   'ptt:stop',
+  'chat:open',
   'emotion:set',
   'avatar:fly',
   'avatar:setVisible',

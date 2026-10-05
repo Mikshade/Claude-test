@@ -82,11 +82,29 @@ export const LINKS = {
   anthropicKeys: 'https://console.anthropic.com/settings/keys',
   live2d: 'https://www.live2d.com/en/',
   live2dLicense: 'https://www.live2d.com/en/terms/live2d-open-software-license-agreement/',
+  /** Covers the bundled sample model (resources/models/default). */
+  live2dFreeMaterialLicense: 'https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html',
+  /** Covers the Cubism Core runtime (live2dcubismcore.min.js). */
+  live2dProprietaryLicense: 'https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html',
   groqKeys: 'https://console.groq.com/keys',
   openaiKeys: 'https://platform.openai.com/api-keys',
   braveSearch: 'https://brave.com/search/api/',
   fishSpeechRepo: 'https://github.com/fishaudio/fish-speech',
 } as const
+
+/**
+ * Credit line required by the Live2D Free Material License for the bundled sample model. Shown
+ * verbatim (English) on the About page in every UI language – do not translate or reword.
+ */
+export const LIVE2D_SAMPLE_CREDIT =
+  'This content uses sample data owned and copyrighted by Live2D Inc. ' +
+  'The sample data are utilized in accordance with conditions and terms set by Live2D Inc.'
+
+/** File-picker filters for a voice clone sample (`config:pickFile`). */
+export const CLONE_SAMPLE_FILTERS = [
+  { name: 'Audio', extensions: ['wav', 'mp3', 'flac'] },
+  { name: 'Alle Dateien / All files', extensions: ['*'] },
+]
 
 /** Pad a number to two digits (quiet-hour selects). */
 export function hourLabel(hour: number): string {

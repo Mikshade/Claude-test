@@ -333,7 +333,8 @@ const de = {
   'behavior.displayPrimary': 'Hauptbildschirm',
   'behavior.displayCustom': 'Bestimmter Bildschirm (ID)…',
   'behavior.displayId': 'Electron-Display-ID',
-  'behavior.displayHint': 'Bei mehreren Monitoren steht die ID im Log beim Start („fitted to display <id>“).',
+  'behavior.displayHint': 'Auf welchem Monitor sie lebt. „Hauptbildschirm“ folgt dem Windows-Hauptmonitor, auch wenn sich die Anordnung ändert.',
+  'behavior.displayUnknown': 'Unbekannter Bildschirm (ID {id})',
 
   'about.title': 'Über Flowy',
   'about.desc': 'Deine Anime-Begleiterin für den Desktop.',
@@ -351,6 +352,9 @@ const de = {
   'about.links': 'Links',
   'about.rerunWizard': 'Einrichtung erneut starten',
   'about.credits': 'Flowy nutzt Claude (Anthropic), Fish Audio und Live2D Cubism. Alle Marken gehören ihren Eigentümern.',
+  'about.live2d': 'Live2D-Lizenzen',
+  'about.live2dFreeMaterial': 'Live2D Free Material License (mitgeliefertes Beispielmodell)',
+  'about.live2dProprietary': 'Live2D Proprietary Software License (Cubism Core)',
 } as const
 
 export type StringKey = keyof typeof de
@@ -682,7 +686,8 @@ const en: Record<StringKey, string> = {
   'behavior.displayPrimary': 'Primary display',
   'behavior.displayCustom': 'Specific display (id)…',
   'behavior.displayId': 'Electron display id',
-  'behavior.displayHint': 'With several monitors the id is in the log at start-up (“fitted to display <id>”).',
+  'behavior.displayHint': 'Which monitor she lives on. “Primary display” follows the Windows main monitor even when the layout changes.',
+  'behavior.displayUnknown': 'Unknown display (id {id})',
 
   'about.title': 'About Flowy',
   'about.desc': 'Your anime companion for the desktop.',
@@ -700,6 +705,9 @@ const en: Record<StringKey, string> = {
   'about.links': 'Links',
   'about.rerunWizard': 'Run the setup again',
   'about.credits': 'Flowy uses Claude (Anthropic), Fish Audio and Live2D Cubism. All trademarks belong to their owners.',
+  'about.live2d': 'Live2D licenses',
+  'about.live2dFreeMaterial': 'Live2D Free Material License (bundled sample model)',
+  'about.live2dProprietary': 'Live2D Proprietary Software License (Cubism Core)',
 }
 
 export const STRINGS: Record<Language, Record<StringKey, string>> = { de, en }

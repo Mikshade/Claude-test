@@ -6,7 +6,7 @@
  */
 import type { FishCloudModel, FlowyConfig, TtsProvider } from '@shared/config'
 import type { TestResult, VoiceInfo } from '@shared/ipc'
-import { LINKS, parseFishReferenceId, TTS_CLOUD_MODELS } from '../catalog'
+import { CLONE_SAMPLE_FILTERS, LINKS, parseFishReferenceId, TTS_CLOUD_MODELS } from '../catalog'
 import { t } from '../i18n'
 import { listAudioDevices } from '../mic'
 import { asyncButton, button, el, field, link, note, replaceChildren, section, select, statusLine, textInput } from '../ui'
@@ -166,6 +166,21 @@ function referenceIdField(ctx: PageContext): HTMLElement {
   return f
 }
 
+/** Clone-sample path: text input + "Durchsuchen…" (native open-file dialog via config:pickFile). */
+function cloneAudioField(ctx: PageContext, path: 'tts.fishCloud.cloneSample.audioPath' | 'tts.fishLocal.cloneSample.audioPath'): HTMLElement {
+  const input = boundText(ctx, path, { placeholder: 'C:\\Users\\…\\sample.wav' })
+  ctx.onConfig((c) => {
+    const value = path === 'tts.fishCloud.cloneSample.audioPath' ? c.tts.fishCloud.cloneSample.audioPath : c.tts.fishLocal.cloneSample.audioPath
+    if (document.activeElement !== input && input.value !== value) input.value = value
+  })
+  const browse = asyncButton(t('common.browse'), t('common.browse'), async () => {
+    const picked = await window.flowy.invoke('config:pickFile', CLONE_SAMPLE_FILTERS)
+    if (picked) ctx.store.set(path, picked, { immediate: true })
+  })
+  const clear = button(t('common.clear'), () => ctx.store.set(path, '', { immediate: true }), { variant: 'ghost' })
+  return el('div', { class: 'input-group' }, input, browse, clear)
+}
+
 function testSection(ctx: PageContext, player: AudioPlayer): HTMLElement {
   const status = statusLine()
   const run = async (): Promise<void> => {
@@ -236,7 +251,7 @@ function cloudSection(ctx: PageContext, player: AudioPlayer): HTMLElement[] {
   const clone = section(
     t('voice.clone'),
     t('voice.cloneDesc'),
-    field(t('voice.cloneAudio'), boundText(ctx, 'tts.fishCloud.cloneSample.audioPath', { placeholder: 'C:\\Users\\…\\sample.wav' })),
+    field(t('voice.cloneAudio'), cloneAudioField(ctx, 'tts.fishCloud.cloneSample.audioPath')),
     field(t('voice.cloneTranscript'), boundTextarea(ctx, 'tts.fishCloud.cloneSample.transcript', { rows: 3 })),
   )
   return [account, voice, transport, clone]
@@ -260,7 +275,7 @@ function localSection(ctx: PageContext, player: AudioPlayer): HTMLElement[] {
   const clone = section(
     t('voice.clone'),
     t('voice.cloneDesc'),
-    field(t('voice.cloneAudio'), boundText(ctx, 'tts.fishLocal.cloneSample.audioPath', { placeholder: 'C:\\Users\\…\\sample.wav' })),
+    field(t('voice.cloneAudio'), cloneAudioField(ctx, 'tts.fishLocal.cloneSample.audioPath')),
     field(t('voice.cloneTranscript'), boundTextarea(ctx, 'tts.fishLocal.cloneSample.transcript', { rows: 3 })),
   )
   return [server, clone]

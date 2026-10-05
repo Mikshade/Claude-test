@@ -107,9 +107,11 @@ export function renderWizard(host: WizardHost, step: WizardStep, lang: 'de' | 'e
     body.replaceChildren(el('div', { class: 'page' }, note('ok', el('strong', null, t('wizard.finish.done')))))
     footer.hidden = true
     setTimeout(() => {
-      window.close()
-      // If the window did not close (e.g. blocked), fall back to the normal settings view.
-      setTimeout(() => host.completed(), 300)
+      // Main closes the window; if it stays open for any reason, fall back to the normal settings view.
+      void window.flowy
+        .invoke('app:closeSettings')
+        .catch((err: unknown) => console.warn('[settings] app:closeSettings failed', err))
+        .then(() => setTimeout(() => host.completed(), 300))
     }, CLOSE_AFTER_FINISH_MS)
   }
 

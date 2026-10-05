@@ -708,6 +708,14 @@ pre {
   margin: 0;
   padding-left: 18px;
 }
+/* Live2D credit line (required verbatim by the Free Material License). */
+.live2d-credit {
+  margin: 0 0 12px;
+  padding-left: 12px;
+  border-left: 3px solid var(--muted);
+  color: var(--muted);
+  font-size: 13px;
+}
 
 /* ---- wizard ----------------------------------------------------------------------------------- */
 .wizard {

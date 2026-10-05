@@ -193,9 +193,10 @@ Start im Log und in den Einstellungen; dann einfach eine andere wählen.
 - Screenshots werden vor dem Senden verkleinert (längste Kante `maxLongEdge` = 1280 px, JPEG-Qualität 70) und zusammen
   mit dem Titel des aktiven Fensters (`includeActiveWindow`) in die Nutzer-Nachricht gelegt. Sie gehen **ausschließlich
   an die Anthropic-API** – nie an Fish Audio.
-- Der Gesprächsverlauf liegt lokal in `%APPDATA%\Flowy\history.json` – inklusive der gesendeten Screenshots, bis der
-  Verlauf gekürzt oder per Tray → „Verlauf löschen“ geleert wird. Langzeit-Notizen (`remember`/`recall`) liegen in
-  `memory.json`, Logs in `logs\flowy.log`.
+- Der Gesprächsverlauf liegt lokal in `%APPDATA%\Flowy\history.json` – **ohne** Screenshots: ein Bild wird nur mit der
+  Runde gesendet, in der es aufgenommen wurde, und danach (im Speicher wie auf der Platte) durch den Platzhalter
+  `[Screenshot was attached]` ersetzt. Per Tray → „Verlauf löschen“ wird der Verlauf geleert. Langzeit-Notizen
+  (`remember`/`recall`) liegen in `memory.json`, Logs in `logs\flowy.log`.
 - Push-to-Talk-Audio geht nur an den gewählten STT-Dienst und wird nicht gespeichert.
 - Proaktive Kommentare (`behavior.proactive`, Standard **aus**) nehmen periodisch einen Screenshot – mit Ruhezeiten.
 - Für sensible Arbeit: Modus **off** wählen. Die Figur zu verstecken schaltet die Wahrnehmung **nicht** ab.
@@ -472,8 +473,9 @@ the log and the settings – just pick another one.
   question sounds like it is about the screen, or when she uses the `take_screenshot` tool) or **off**.
 - Screenshots are downscaled before sending (long edge `maxLongEdge` = 1280 px, JPEG quality 70) and put into the user
   message together with the active window title (`includeActiveWindow`). They go **only to the Anthropic API** – never to Fish Audio.
-- The conversation history is stored locally in `%APPDATA%\Flowy\history.json` – including the screenshots that were
-  sent, until the history is trimmed or cleared via tray → "Clear history". Long-term notes (`remember`/`recall`) live
+- The conversation history is stored locally in `%APPDATA%\Flowy\history.json` – **without** screenshots: an image is
+  only sent with the turn that took it and is then replaced (in memory and on disk) by the placeholder
+  `[Screenshot was attached]`. Tray → "Clear history" empties the history. Long-term notes (`remember`/`recall`) live
   in `memory.json`, logs in `logs\flowy.log`.
 - Push-to-talk audio only goes to the chosen STT service and is not stored.
 - Proactive comments (`behavior.proactive`, default **off**) take a screenshot periodically – with quiet hours.

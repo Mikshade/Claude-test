@@ -1,7 +1,15 @@
 import { decode as msgpackDecode } from '@msgpack/msgpack'
 import { describe, expect, it, vi } from 'vitest'
 import { TtsConfigSchema, type TtsConfig } from '@shared/config'
-import { clampChunkLength, createFishLocalTts, LOCAL_KEY_INVALID_MESSAGE, normalizeLocalFormat, serverUnreachableMessage } from './fishLocal'
+import {
+  clampChunkLength,
+  createFishLocalTts,
+  isValidLocalReferenceId,
+  LOCAL_KEY_INVALID_MESSAGE,
+  normalizeLocalFormat,
+  referenceIdInvalidMessage,
+  serverUnreachableMessage,
+} from './fishLocal'
 
 type FetchMock = ReturnType<typeof vi.fn<typeof fetch>>
 
@@ -210,5 +218,31 @@ describe('createFishLocalTts.test', () => {
     const result = await createFishLocalTts(cfg(), { fetchImpl, sleep: async () => undefined }).test('Hallo')
     expect(result.ok).toBe(false)
     expect(result.message).toContain('Failed to generate speech')
+  })
+})
+
+describe('reference_id validation (path traversal guard for the local server)', () => {
+  it('accepts plain folder names and rejects anything path-like', () => {
+    expect(isValidLocalReferenceId('mika')).toBe(true)
+    expect(isValidLocalReferenceId('My Voice_01-b')).toBe(true)
+    expect(isValidLocalReferenceId('../../etc')).toBe(false)
+    expect(isValidLocalReferenceId('a/b')).toBe(false)
+    expect(isValidLocalReferenceId('a\\b')).toBe(false)
+    expect(isValidLocalReferenceId('voice.wav')).toBe(false)
+    expect(isValidLocalReferenceId('')).toBe(false)
+  })
+
+  it('never sends an invalid reference_id to the server', async () => {
+    const fetchImpl = fetchSequence(audioOk)
+    const client = createFishLocalTts(cfg({}, { referenceId: '../../secret' }), { fetchImpl })
+    await expect(client.synthesize('Hallo.')).rejects.toThrow(referenceIdInvalidMessage('../../secret'))
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('test() reports the invalid id instead of synthesizing', async () => {
+    const fetchImpl = fetchSequence(healthOk)
+    const result = await createFishLocalTts(cfg({}, { referenceId: 'a/b' }), { fetchImpl }).test('Hallo')
+    expect(result).toEqual({ ok: false, message: referenceIdInvalidMessage('a/b') })
+    expect(fetchImpl).toHaveBeenCalledTimes(1) // only the health check
   })
 })

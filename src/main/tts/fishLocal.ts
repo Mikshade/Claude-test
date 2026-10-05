@@ -32,6 +32,20 @@ export const LOCAL_REPETITION_PENALTY = 1.1
 
 export const LOCAL_KEY_INVALID_MESSAGE = 'Fish Speech API-Key ungültig (der Server wurde mit --api-key gestartet)'
 
+/**
+ * The open-source server (pinned commit) uses `reference_id` unvalidated in a file system path
+ * (`references/<id>`), so anything but a plain folder name must never be sent.
+ */
+export const LOCAL_REFERENCE_ID_RE = /^[a-zA-Z0-9\-_ ]+$/
+
+export function isValidLocalReferenceId(id: string): boolean {
+  return LOCAL_REFERENCE_ID_RE.test(id)
+}
+
+export function referenceIdInvalidMessage(id: string): string {
+  return `Ungültige Fish Speech reference_id "${id}" – erlaubt sind nur Buchstaben, Ziffern, Leerzeichen, - und _`
+}
+
 export function serverUnreachableMessage(baseUrl: string): string {
   return `Fish Speech Server nicht erreichbar unter ${baseUrl} – läuft \`tools/api_server.py\`?`
 }
@@ -66,6 +80,8 @@ export function createFishLocalTts(config: TtsConfig, deps: FishLocalDeps = {}):
   const format = normalizeLocalFormat(local.format)
   const chunkLength = clampChunkLength(deps.chunkLength)
   const referenceId = local.referenceId.trim() || null
+  const referenceIdError = referenceId !== null && !isValidLocalReferenceId(referenceId) ? referenceIdInvalidMessage(referenceId) : null
+  if (referenceIdError) log.warn(referenceIdError)
   if (local.format !== format) log.warn(`format '${local.format}' is not supported by the local server – using '${format}'`)
 
   let referencesPromise: Promise<FishReferenceAudio[] | null> | null = null
@@ -106,6 +122,7 @@ export function createFishLocalTts(config: TtsConfig, deps: FishLocalDeps = {}):
       body.references = references
       body.use_memory_cache = 'on'
     } else {
+      if (referenceIdError) throw new Error(referenceIdError)
       body.reference_id = referenceId
     }
     return body

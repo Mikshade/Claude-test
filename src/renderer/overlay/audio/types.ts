@@ -1,6 +1,7 @@
 /**
  * Renderer audio contracts (implemented by the audio agent in recorder.ts / player.ts).
  */
+import type { Language } from '@shared/config'
 import type { RecordedAudio } from '@shared/ipc'
 import type { SpeechChunk } from '@shared/state'
 
@@ -11,6 +12,8 @@ export interface RecorderOptions {
   silenceTimeoutMs: number
   /** Hard cap for one recording. */
   maxRecordingMs: number
+  /** Language of the error messages `start()` rejects with (default 'de'). */
+  language?: Language
   /** 0..1 input level for the UI meter, ~20 Hz. */
   onLevel?(level: number): void
   /** Called when the recorder stopped by itself (silence or max duration). */
@@ -25,7 +28,7 @@ export interface Recorder {
   /** Stop without producing a result. */
   cancel(): void
   isRecording(): boolean
-  setOptions(options: Partial<Pick<RecorderOptions, 'deviceId' | 'silenceTimeoutMs' | 'maxRecordingMs'>>): void
+  setOptions(options: Partial<Pick<RecorderOptions, 'deviceId' | 'silenceTimeoutMs' | 'maxRecordingMs' | 'language'>>): void
   dispose(): void
 }
 

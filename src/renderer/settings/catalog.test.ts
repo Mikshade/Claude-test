@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { FISH_CLOUD_MODELS } from '@shared/config'
-import { formatSeconds, hourLabel, isKnownLlmModel, LLM_MODELS, matchSttPreset, parseFishReferenceId, STT_PRESETS, TTS_CLOUD_MODELS } from './catalog'
+import {
+  CLONE_SAMPLE_FILTERS,
+  formatSeconds,
+  hourLabel,
+  isKnownLlmModel,
+  LINKS,
+  LIVE2D_SAMPLE_CREDIT,
+  LLM_MODELS,
+  matchSttPreset,
+  parseFishReferenceId,
+  STT_PRESETS,
+  TTS_CLOUD_MODELS,
+} from './catalog'
 import { STRINGS } from './i18n'
 
 describe('catalog tables', () => {
@@ -15,6 +27,14 @@ describe('catalog tables', () => {
   it('knows the default LLM model', () => {
     expect(isKnownLlmModel('claude-opus-5-5')).toBe(true)
     expect(isKnownLlmModel('claude-3-opus')).toBe(false)
+  })
+  it('carries the Live2D sample credit line verbatim and links both Live2D licenses', () => {
+    expect(LIVE2D_SAMPLE_CREDIT).toBe(
+      'This content uses sample data owned and copyrighted by Live2D Inc. The sample data are utilized in accordance with conditions and terms set by Live2D Inc.',
+    )
+    expect(LINKS.live2dFreeMaterialLicense).toBe('https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html')
+    expect(LINKS.live2dProprietaryLicense).toBe('https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html')
+    expect(CLONE_SAMPLE_FILTERS[0]?.extensions).toContain('wav')
   })
   it('matches STT presets by base url', () => {
     expect(matchSttPreset('https://api.groq.com/openai/v1/')?.id).toBe('groq')

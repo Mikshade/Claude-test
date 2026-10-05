@@ -79,8 +79,9 @@ The GUI only runs on Windows (`npm run dev` / `npm run dist`).
 ### Settings window
 
 Normal window (900×680, resizable, `--flowy-page=settings`). Opened on first run with the wizard,
-later from the tray/context menu. Only this page ever receives clear-text API keys
-(`config:get`); the overlay gets `redactConfig()`.
+later from the tray/context menu. Only this page ever receives clear-text API keys: the `config:get` /
+`config:patch` handlers check the sender window and answer the overlay (or any unknown sender) with
+`redactConfig()`.
 
 ### Live2D asset serving (`flowy-model://`)
 
@@ -104,8 +105,9 @@ state: idle → listening → transcribing → thinking → speaking → idle
    - idle → `ptt:start` → renderer starts recording (`audio/recorder.ts`) → state `listening`
    - listening → `ptt:stop` (renderer also auto-stops after `stt.silenceTimeoutMs` of silence)
    - speaking/thinking → `interrupt()` then start listening
-2. Renderer sends `turn:submitAudio(RecordedAudio)` → STT (`stt/*`) → `turn:userText`.
-   Text from the chat input goes through `turn:submitText`.
+2. Renderer sends `turn:submitAudio(RecordedAudio | null)` → STT (`stt/*`) → `turn:userText`. `null`
+   (too short / no speech / mic failed) only ends the listening state. Text from the chat input goes
+   through `turn:submitText`; the `hotkeys.openChat` key pushes `chat:open` to the overlay.
 3. Context: if `screenAwareness.mode === 'always'` (or the text looks like a screen question in
    `on-demand`), main captures a downscaled JPEG and the active window title and passes them to
    `agent.run()` as `screenshot` / `context` (they go into the **user** message, never the system
@@ -123,7 +125,10 @@ state: idle → listening → transcribing → thinking → speaking → idle
    calls `ctx.confirm()` → `confirm:request` to the overlay → the bubble shows Yes/No →
    `confirm:answer`. Timeout 60 s = denied.
 8. Proactive: `orchestrator.proactive('greeting' | instruction)` runs a turn without user text
-   (used for the start-up greeting and the optional periodic screen comment).
+   (used for the start-up greeting and the optional periodic screen comment). The greeting starts once
+   per run when the renderer reports `overlay:ready` (character, bubble and player exist); due
+   reminders (`set_reminder`) come in here too and fall back to a desktop notification while she is busy.
+   Screenshots are attached only while `screenAwareness.mode !== 'off'` and `permissions.allowScreenshots`.
 
 ## Brain (src/main/brain)
 
@@ -137,6 +142,10 @@ Follow the `claude-api` skill's TypeScript "Streaming Manual Loop":
   image blocks allowed for screenshots). Stop on `end_turn`, `refusal`, `max_tokens`.
 - Append `message.content` verbatim to history (keeps thinking blocks). History is append-only
   within a turn; trimming happens between turns and never splits tool_use/tool_result pairs.
+- Screenshots (user-message image blocks and `take_screenshot` tool results) are sent only with the
+  turn that took them: before the next turn `history.redactImages()` replaces them with the text
+  `[Screenshot was attached]`, and `history.json` is always written redacted (privacy, and no base64
+  re-upload on every request).
 - Tool inputs are validated with the tool's zod schema before execution; invalid → `is_error`.
 - Refusal fallback (`llm.refusalFallback`): use `client.beta.messages.stream` with
   `betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default'` **only if** the installed SDK

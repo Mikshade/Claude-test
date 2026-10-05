@@ -10,6 +10,11 @@
  * the next such message (assistant messages, tool_result messages, mid-conversation system messages).
  * Trimming and compaction only ever remove whole turns from the front, so tool_use/tool_result pairs
  * stay together and the first message is always a plain user message.
+ *
+ * Privacy/cost: image blocks (screenshots in the user message, `take_screenshot` tool results) are kept
+ * in memory only for the turn that attached them. `redactImages()` – called by the agent before a new
+ * turn – replaces them with a text placeholder, and the file on disk is always written redacted, so
+ * base64 screenshots are neither persisted nor re-sent with every later request.
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -24,6 +29,8 @@ const FILE_VERSION = 1
 export const SUMMARY_PREFIX = '[Summary of earlier conversation]'
 /** Marker the agent appends to the user text for volatile context; `view()` hides it. */
 export const CONTEXT_MARKER = '\n\n[Context]\n'
+/** Text block that replaces an image block once its turn is over (and in the persisted file). */
+export const IMAGE_PLACEHOLDER = '[Screenshot was attached]'
 const VIEW_TOOL_INPUT_MAX = 200
 
 export interface ConversationHistory {
@@ -33,6 +40,8 @@ export interface ConversationHistory {
   trim(maxTurns: number): void
   /** Replace everything older than the last `keepTurns` turns with a summary text (as a user+assistant pair). */
   compact(summary: string, keepTurns: number): void
+  /** Replace every image block (user messages and tool results) with `IMAGE_PLACEHOLDER`. Call before a new turn. */
+  redactImages(): void
   clear(): void
   view(limit?: number): ChatMessageView[]
   /** Flush to disk. */
@@ -83,6 +92,34 @@ export function countTurns(messages: readonly Anthropic.MessageParam[]): number 
   return turnStartIndexes(messages).length
 }
 
+/**
+ * Copy of `message` with every image block replaced by a `IMAGE_PLACEHOLDER` text block – both
+ * top-level blocks of a user message and the content of its tool_result blocks. Returns the same
+ * object when nothing had to change (assistant messages, string content, no images).
+ */
+export function redactImageBlocks(message: Anthropic.MessageParam): Anthropic.MessageParam {
+  if (message.role !== 'user' || typeof message.content === 'string') return message
+  let changed = false
+  const content = message.content.map((block) => {
+    if (block.type === 'image') {
+      changed = true
+      return { type: 'text', text: IMAGE_PLACEHOLDER } as Anthropic.TextBlockParam
+    }
+    if (block.type === 'tool_result' && Array.isArray(block.content) && block.content.some((b) => b.type === 'image')) {
+      changed = true
+      const inner = block.content.map((b) => (b.type === 'image' ? ({ type: 'text', text: IMAGE_PLACEHOLDER } as Anthropic.TextBlockParam) : b))
+      return { ...block, content: inner }
+    }
+    return block
+  })
+  return changed ? { ...message, content } : message
+}
+
+/** True when the message still carries an image block somewhere. */
+export function hasImageBlocks(message: Anthropic.MessageParam): boolean {
+  return redactImageBlocks(message) !== message
+}
+
 export function createHistory(filePath: string): ConversationHistory {
   let entries: Entry[] = []
   let nextId = 1
@@ -119,7 +156,8 @@ export function createHistory(filePath: string): ConversationHistory {
   }
 
   function write(): void {
-    const data: StoredFile = { version: FILE_VERSION, entries: entries.map(({ at, message }) => ({ at, message })) }
+    // Never persist base64 screenshots – the in-memory copy keeps them for the running turn only.
+    const data: StoredFile = { version: FILE_VERSION, entries: entries.map(({ at, message }) => ({ at, message: redactImageBlocks(message) })) }
     const dir = path.dirname(filePath)
     const tmp = path.join(dir, `.${path.basename(filePath)}.${process.pid}.tmp`)
     try {
@@ -184,6 +222,20 @@ export function createHistory(filePath: string): ConversationHistory {
       entries = [...replacement, ...entries.slice(cut)]
       log.debug(`compacted ${cut} messages into a summary, keeping ${keep} turns`)
       write()
+    },
+
+    redactImages() {
+      let redacted = 0
+      for (const entry of entries) {
+        const next = redactImageBlocks(entry.message)
+        if (next === entry.message) continue
+        entry.message = next
+        redacted++
+      }
+      if (redacted > 0) {
+        dirty = true
+        log.debug(`redacted image blocks in ${redacted} message(s)`)
+      }
     },
 
     clear() {

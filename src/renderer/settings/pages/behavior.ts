@@ -5,9 +5,10 @@
  * OWNER: settings-ui agent.
  */
 import type { FlowyConfig, ScreenAwarenessMode } from '@shared/config'
+import type { DisplayInfo } from '@shared/ipc'
 import { hourLabel } from '../catalog'
 import { t } from '../i18n'
-import { el, field, note, section, select, textInput } from '../ui'
+import { el, field, note, replaceChildren, section, select, type SelectOption } from '../ui'
 import { boundSelect, boundSlider, boundToggle } from './bind'
 import type { Page, PageContext } from './context'
 
@@ -16,39 +17,37 @@ function hourSelect(ctx: PageContext, path: 'behavior.proactive.quietHoursStart'
   return boundSelect<string>(ctx, path, options, { map: (v) => Number(v) })
 }
 
-/** Display selector: 'primary' or a numeric Electron display id (typed in). */
+/** Options for the display dropdown: 'primary', every connected display, plus the stored id if it is not connected. */
+export function displayOptions(displays: DisplayInfo[], current: FlowyConfig['display']): Array<SelectOption<string>> {
+  const options: Array<SelectOption<string>> = [{ value: 'primary', label: t('behavior.displayPrimary') }]
+  for (const d of displays) options.push({ value: String(d.id), label: d.primary ? `${d.label} ★` : d.label })
+  if (current !== 'primary' && !displays.some((d) => d.id === current)) {
+    options.push({ value: String(current), label: t('behavior.displayUnknown', { id: current }) })
+  }
+  return options
+}
+
+/** Display selector fed by `app:getDisplays` ('primary' or a numeric Electron display id). */
 function displayPicker(ctx: PageContext): HTMLElement {
-  const current = ctx.config.display
-  const custom = current !== 'primary'
-  const idInput = textInput({
-    value: custom ? String(current) : '',
-    type: 'number',
-    placeholder: '2528732444',
-    path: 'display',
-    onCommit: (v) => {
-      const id = Number.parseInt(v, 10)
-      if (Number.isInteger(id)) ctx.store.set('display', id, { immediate: true })
-    },
-  })
-  const idField = field(t('behavior.displayId'), idInput, { hint: t('behavior.displayHint') })
-  idField.hidden = !custom
-  const sel = select<'primary' | 'custom'>({
-    value: custom ? 'custom' : 'primary',
-    options: [
-      { value: 'primary', label: t('behavior.displayPrimary') },
-      { value: 'custom', label: t('behavior.displayCustom') },
-    ],
-    onChange: (v) => {
-      if (v === 'primary') {
-        idField.hidden = true
-        ctx.store.set('display', 'primary', { immediate: true })
-      } else {
-        idField.hidden = false
-        idInput.focus()
-      }
-    },
-  })
-  return el('div', null, sel, idField)
+  const holder = el('div', null)
+  const render = (displays: DisplayInfo[]): void => {
+    const current = ctx.store.get().display
+    replaceChildren(
+      holder,
+      select<string>({
+        value: String(current),
+        options: displayOptions(displays, current),
+        path: 'display',
+        onChange: (v) => ctx.store.set('display', v === 'primary' ? 'primary' : Number.parseInt(v, 10), { immediate: true }),
+      }),
+    )
+  }
+  render([])
+  void window.flowy
+    .invoke('app:getDisplays')
+    .then(render)
+    .catch((err: unknown) => console.warn('[settings] app:getDisplays failed', err))
+  return holder
 }
 
 export const behaviorPage: Page = {
@@ -112,7 +111,7 @@ export const behaviorPage: Page = {
       t('behavior.system'),
       null,
       boundToggle(ctx, 'autostart', t('behavior.autostart'), t('behavior.autostartDesc')),
-      field(t('behavior.display'), displayPicker(ctx)),
+      field(t('behavior.display'), displayPicker(ctx), { hint: t('behavior.displayHint') }),
     )
 
     return el('div', { class: 'page' }, general, proactive, screen, system)

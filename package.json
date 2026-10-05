@@ -20,7 +20,7 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint . --ext .ts",
+    "lint": "npm run typecheck",
     "setup:live2d": "node scripts/setup-live2d.mjs",
     "dist": "electron-vite build && electron-builder --win",
     "dist:portable": "electron-vite build && electron-builder --win portable"

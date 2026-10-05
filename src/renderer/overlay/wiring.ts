@@ -143,6 +143,7 @@ export interface ConfigDiff {
   fontSize: boolean
   language: boolean
   idleOpacity: boolean
+  theme: boolean
 }
 
 export function diffConfig(prev: FlowyConfig, next: FlowyConfig): ConfigDiff {
@@ -164,6 +165,7 @@ export function diffConfig(prev: FlowyConfig, next: FlowyConfig): ConfigDiff {
     fontSize: prev.appearance.bubbleFontSize !== next.appearance.bubbleFontSize,
     language: prev.character.language !== next.character.language,
     idleOpacity: prev.appearance.idleOpacity !== next.appearance.idleOpacity,
+    theme: prev.appearance.theme !== next.appearance.theme,
   }
 }
 
@@ -215,6 +217,9 @@ export function noopBubble(): BubbleController {
     hide: noop,
     setFontSize: noop,
     setLanguage: noop,
+    setTheme: noop,
+    isConfirmPending: () => false,
+    isVisible: () => false,
     dispose: noop,
   }
 }

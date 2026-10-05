@@ -5,7 +5,7 @@ import type { SpeechChunk } from '@shared/state'
 import type { Agent, AgentCallbacks, AgentResult, TurnInput } from './brain/agent'
 import type { ConfigStore } from './config/store'
 import type { NotesStore } from './memory/notes'
-import { createOrchestrator, inQuietHours, type Orchestrator, type OrchestratorDeps } from './orchestrator'
+import { canSeeScreen, createOrchestrator, inQuietHours, type Orchestrator, type OrchestratorDeps, wantsScreenshot } from './orchestrator'
 import type { SttClient } from './stt/types'
 import type { TtsClient } from './tts/types'
 import type { WindowsSystem } from './system/windows'
@@ -367,6 +367,89 @@ describe('orchestrator', () => {
     await settle(20)
     expect(calls).toHaveLength(1)
     expect(calls[0]?.text).toContain('[[silence]]')
+  })
+
+  it('periodic proactive comments are skipped when she cannot see the screen', async () => {
+    const calls: TurnInput[] = []
+    const s = setup({
+      agent: fakeAgent({ deltas: ['[[silence]]'] }, calls),
+      config: {
+        screenAwareness: { mode: 'off' },
+        behavior: { proactive: { enabled: true, intervalMinutes: 2, quietHoursStart: 0, quietHoursEnd: 0 } },
+      },
+    })
+    orchestrator = s.orchestrator
+    await vi.advanceTimersByTimeAsync(2 * 60_000 + 10)
+    await settle(20)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('an empty recording (null) only ends the listening state', async () => {
+    const s = setup()
+    orchestrator = s.orchestrator
+    orchestrator.pushToTalk()
+    expect(orchestrator.state()).toBe('listening')
+    expect(await orchestrator.submitAudio(null)).toBe('')
+    expect(orchestrator.state()).toBe('idle')
+    expect(channels(s.sent)).not.toContain('turn:error')
+    // a second press starts a fresh recording instead of "stopping" a stale one
+    orchestrator.pushToTalk()
+    expect(channels(s.sent).filter((c) => c === 'ptt:start')).toHaveLength(2)
+    orchestrator.interrupt()
+    // null while idle is a harmless no-op
+    expect(await orchestrator.submitAudio(null)).toBe('')
+    expect(orchestrator.state()).toBe('idle')
+  })
+
+  it('interrupt during transcription aborts the STT request, returns to idle and starts no brain turn', async () => {
+    let aborted = false
+    const slowStt: SttClient = {
+      name: 'slow-stt',
+      transcribe: (_audio, _language, signal) =>
+        new Promise<string>((resolve, reject) => {
+          const timer = setTimeout(() => resolve('zu spät'), 1_000)
+          signal?.addEventListener('abort', () => {
+            clearTimeout(timer)
+            aborted = true
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+          })
+        }),
+      test: async () => ({ ok: true, message: 'ok' }),
+    }
+    const calls: TurnInput[] = []
+    const s = setup({ stt: slowStt, agent: fakeAgent({ deltas: ['x'] }, calls) })
+    orchestrator = s.orchestrator
+    orchestrator.pushToTalk()
+    const p = orchestrator.submitAudio({ data: new ArrayBuffer(2), mimeType: 'audio/wav', durationMs: 500 })
+    await settle(5)
+    expect(orchestrator.state()).toBe('transcribing')
+    orchestrator.interrupt()
+    expect(orchestrator.state()).toBe('idle')
+    await p
+    await settle(5)
+    expect(aborted).toBe(true)
+    expect(calls).toHaveLength(0)
+    expect(channels(s.sent)).not.toContain('turn:error')
+  })
+
+  it('never attaches a screenshot when screen awareness is off – not even for proactive turns', async () => {
+    const calls: TurnInput[] = []
+    const s = setup({ tts: null, agent: fakeAgent({ deltas: ['Hi!'] }, calls), config: { screenAwareness: { mode: 'off' } } })
+    orchestrator = s.orchestrator
+    await orchestrator.proactive('greeting')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.screenshot).toBeUndefined()
+    expect(calls[0]?.context?.['screenshot']).toBeUndefined()
+
+    const off = s.store.get()
+    expect(canSeeScreen(off)).toBe(false)
+    expect(wantsScreenshot(off, 'Was siehst du auf dem Bildschirm?', 'text')).toBe(false)
+    const onDemand = parseConfig(mergeConfig(DEFAULT_CONFIG, { screenAwareness: { mode: 'on-demand' } }))
+    expect(wantsScreenshot(onDemand, 'Was siehst du?', 'text')).toBe(true)
+    expect(wantsScreenshot(onDemand, 'Erzähl einen Witz', 'voice')).toBe(false)
+    expect(wantsScreenshot(onDemand, 'x', 'proactive')).toBe(true)
+    const noPermission = parseConfig(mergeConfig(DEFAULT_CONFIG, { permissions: { allowScreenshots: false } }))
+    expect(wantsScreenshot(noPermission, 'Was siehst du?', 'text')).toBe(false)
   })
 })
 

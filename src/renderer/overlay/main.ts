@@ -83,6 +83,8 @@ on('turn:started', (r) => {
 })
 on('turn:userText', (r, { text }) => r.bubble.showUserText(stripMarkers(text)))
 on('turn:assistantDelta', (r, { turnId, delta }) => {
+  // Without subtitles only the finished answer is shown (turn:assistantDone), no live streaming.
+  if (!r.config.appearance.showSubtitles) return
   if (r.assistantTurn !== turnId) {
     r.assistantTurn = turnId
     r.stripper.reset()
@@ -102,6 +104,7 @@ on('speech:chunk', (r, chunk) => r.player.enqueue(chunk))
 on('speech:stop', (r) => r.player.stop())
 on('ptt:start', (r, { turnId }) => onPttStart(r, turnId))
 on('ptt:stop', (r) => void onPttStop(r))
+on('chat:open', (r, { prefill }) => r.bubble.openChatInput(prefill))
 on('emotion:set', (r, { emotion, holdMs }) => setEmotion(r, emotion, holdMs))
 on('avatar:fly', flyAway)
 on('avatar:setVisible', setVisible)
@@ -158,6 +161,8 @@ async function main(): Promise<void> {
   rt = runtime
   for (const replay of pending.splice(0)) replay()
   onLanded(runtime)
+  // Everything that can show or play something exists now – main may start the greeting.
+  void api.invoke('overlay:ready').catch(warn('ready'))
 }
 
 function currentWorkArea(): Rect {
@@ -217,6 +222,7 @@ function createBubbleSafe(r: Runtime): BubbleController {
       root: r.bubbleRoot,
       language: r.config.character.language,
       fontSize: r.config.appearance.bubbleFontSize,
+      theme: r.config.appearance.theme,
       onSubmitText: (text) => void api.invoke('turn:submitText', text).catch(warn('submitText')),
       onInterrupt: () => void api.invoke('turn:interrupt').catch(warn('interrupt')),
       onInteractiveChange: () => updateInteractive(r),
@@ -235,7 +241,7 @@ function createPlayerSafe(r: Runtime): Player {
       outputDeviceId: r.config.tts.outputDeviceId,
       onMouth: (value) => r.character.setMouthOpen(value),
       onChunkStart: (chunk: SpeechChunk) => {
-        r.bubble.showSpokenSentence(chunk.turnId, chunk.text)
+        if (r.config.appearance.showSubtitles) r.bubble.showSpokenSentence(chunk.turnId, chunk.text)
         setEmotion(r, chunk.emotion)
       },
       onTurnFinished: (turnId) => {
@@ -260,6 +266,7 @@ function createRecorderSafe(r: Runtime): Recorder {
       deviceId: r.config.stt.inputDeviceId,
       silenceTimeoutMs: r.config.stt.silenceTimeoutMs,
       maxRecordingMs: r.config.stt.maxRecordingMs,
+      language: r.config.character.language,
       onLevel: (level) => r.bubble.setInputLevel(level),
       onAutoStop: (audio) => void submitAudio(r, audio),
     })
@@ -402,9 +409,8 @@ function setVisible(r: Runtime, visible: boolean): void {
 // ---- push-to-talk ----------------------------------------------------------------------------
 
 function onPttStart(r: Runtime, turnId: string): void {
-  // main currently reuses this channel with an empty turnId for the "open chat" hotkey.
-  if (turnId === '') {
-    r.bubble.openChatInput()
+  if (!turnId) {
+    console.warn('[overlay] ptt:start without a turn id ignored')
     return
   }
   r.player.stop()
@@ -412,8 +418,12 @@ function onPttStart(r: Runtime, turnId: string): void {
     .start()
     .then(() => r.bubble.showListening())
     .catch((err: unknown) => {
+      // The recorder's Error already carries a localised, specific message (permission, no device, …).
       console.warn('[overlay] recorder start failed', err)
-      r.bubble.showError(t(r.config.character.language, 'micError'))
+      const message = err instanceof Error && err.message ? err.message : t(r.config.character.language, 'micError')
+      r.bubble.showError(message)
+      // main is waiting in 'listening' – tell it that nothing will come.
+      void api.invoke('turn:submitAudio', null).catch(warn('submitAudio'))
     })
 }
 
@@ -425,11 +435,9 @@ async function onPttStop(r: Runtime): Promise<void> {
   await submitAudio(r, audio)
 }
 
+/** Forward the recording to main; `null` (too short / no speech) still goes up so main leaves 'listening'. */
 async function submitAudio(r: Runtime, audio: Awaited<ReturnType<Recorder['stop']>>): Promise<void> {
-  if (!audio) {
-    r.bubble.hide(0)
-    return
-  }
+  if (!audio) r.bubble.hide(0)
   try {
     await api.invoke('turn:submitAudio', audio)
   } catch (err) {
@@ -464,7 +472,11 @@ function applyConfig(r: Runtime, next: FlowyConfig): void {
     })
   }
   if (d.fontSize) r.bubble.setFontSize(next.appearance.bubbleFontSize)
-  if (d.language) r.bubble.setLanguage(next.character.language)
+  if (d.language) {
+    r.bubble.setLanguage(next.character.language)
+    r.recorder.setOptions({ language: next.character.language })
+  }
+  if (d.theme) r.bubble.setTheme(next.appearance.theme)
   if (d.idleOpacity) r.character.setOpacity(opacityForState(r.state, next.appearance.idleOpacity))
   if (d.pinned || d.avoidance) updateInteractive(r)
 }

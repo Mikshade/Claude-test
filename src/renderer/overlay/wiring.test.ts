@@ -149,7 +149,7 @@ describe('diffConfig', () => {
         avatar: { mirror: true, avoidance: { radius: 200 }, anchor: 'top-left', lookAtCursor: false, pinned: true },
         tts: { volume: 20, outputDeviceId: 'dev' },
         stt: { inputDeviceId: 'mic' },
-        appearance: { bubbleFontSize: 20, idleOpacity: 50 },
+        appearance: { bubbleFontSize: 20, idleOpacity: 50, theme: 'dark' },
         character: { language: 'en' },
       }),
     )
@@ -166,6 +166,7 @@ describe('diffConfig', () => {
       fontSize: true,
       language: true,
       idleOpacity: true,
+      theme: true,
     })
   })
 })

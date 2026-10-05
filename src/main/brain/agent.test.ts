@@ -19,7 +19,7 @@ import {
   type AgentOptions,
   type TextStream,
 } from './agent'
-import { createHistory, type ConversationHistory } from './history'
+import { createHistory, IMAGE_PLACEHOLDER, type ConversationHistory } from './history'
 import type { AnyTool, ToolContext, ToolDefinition } from './tools/types'
 
 // ---------------------------------------------------------------------------------------------
@@ -572,5 +572,22 @@ describe('test() and update()', () => {
     expect(sent).toHaveLength(7) // 3 complete old turns + the new user message
     expect(sent[0]).toEqual({ role: 'user', content: [{ type: 'text', text: 'u2' }] })
     expect(history.messages()).toHaveLength(8)
+  })
+
+  it('sends a screenshot only with the turn that took it: later requests and the file get a placeholder', async () => {
+    const { agent, fake } = build([{ content: [text('Ein Editor.')] }, { content: [text('Okay.')] }])
+    await agent.run(input('Was siehst du?', { screenshot: { mediaType: 'image/jpeg', base64: 'QUJD' } }), callbacks(), new AbortController().signal)
+    const first = fake.calls[0]!.params['messages'] as Anthropic.MessageParam[]
+    expect((first[0]!.content as Anthropic.ContentBlockParam[])[0]).toMatchObject({ type: 'image' })
+    const onDisk = fs.readFileSync(historyFile, 'utf8')
+    expect(onDisk).not.toContain('QUJD')
+    expect(onDisk).toContain(IMAGE_PLACEHOLDER)
+
+    await agent.run(input('Und jetzt?', { turnId: 't2' }), callbacks(), new AbortController().signal)
+    const second = fake.calls[1]!.params['messages'] as Anthropic.MessageParam[]
+    expect(second).toHaveLength(3)
+    expect(second[0]).toEqual({ role: 'user', content: [{ type: 'text', text: IMAGE_PLACEHOLDER }, { type: 'text', text: 'Was siehst du?' }] })
+    expect(JSON.stringify(second)).not.toContain('QUJD')
+    expect(JSON.stringify(history.messages())).not.toContain('QUJD')
   })
 })

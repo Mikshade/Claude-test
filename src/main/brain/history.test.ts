@@ -3,7 +3,17 @@ import os from 'node:os'
 import path from 'node:path'
 import type Anthropic from '@anthropic-ai/sdk'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { CONTEXT_MARKER, countTurns, createHistory, isToolResultMessage, SUMMARY_PREFIX, turnStartIndexes } from './history'
+import {
+  CONTEXT_MARKER,
+  countTurns,
+  createHistory,
+  hasImageBlocks,
+  IMAGE_PLACEHOLDER,
+  isToolResultMessage,
+  redactImageBlocks,
+  SUMMARY_PREFIX,
+  turnStartIndexes,
+} from './history'
 
 let dir: string
 let file: string
@@ -218,5 +228,59 @@ describe('view', () => {
     expect(h.view(2)).toEqual(all.slice(-2))
     expect(h.view(0)).toEqual([])
     expect(h.view(100)).toEqual(all)
+  })
+})
+
+describe('image redaction', () => {
+  const image = { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: 'QUJD' } }
+  const shot = (): Anthropic.MessageParam => ({ role: 'user', content: [image, { type: 'text', text: 'Was siehst du?' }] })
+  const toolShot = (id: string): Anthropic.MessageParam => ({
+    role: 'user',
+    content: [{ type: 'tool_result', tool_use_id: id, content: [image, { type: 'text', text: 'Screenshot 10×10' }] }],
+  })
+
+  it('redactImageBlocks replaces image blocks in user messages and tool results and leaves the rest untouched', () => {
+    const plain = user('Hallo')
+    expect(redactImageBlocks(plain)).toBe(plain)
+    const reply = assistant('x')
+    expect(redactImageBlocks(reply)).toBe(reply)
+    const result = toolResult('t1')
+    expect(redactImageBlocks(result)).toBe(result)
+    expect(hasImageBlocks(shot())).toBe(true)
+    expect(hasImageBlocks(plain)).toBe(false)
+    expect(redactImageBlocks(shot())).toEqual({
+      role: 'user',
+      content: [{ type: 'text', text: IMAGE_PLACEHOLDER }, { type: 'text', text: 'Was siehst du?' }],
+    })
+    expect(redactImageBlocks(toolShot('t1'))).toEqual({
+      role: 'user',
+      content: [{ type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: IMAGE_PLACEHOLDER }, { type: 'text', text: 'Screenshot 10×10' }] }],
+    })
+  })
+
+  it('never writes base64 images to disk and drops them from memory on redactImages()', () => {
+    const h = createHistory(file)
+    h.append(shot())
+    h.append(toolUse('t1', 'take_screenshot'))
+    h.append(toolShot('t1'))
+    h.append(assistant('Ein Editor.'))
+    h.save()
+    const raw = fs.readFileSync(file, 'utf8')
+    expect(raw).not.toContain('QUJD')
+    expect(raw).toContain(IMAGE_PLACEHOLDER)
+    // the running turn still has its images in memory
+    expect(JSON.stringify(h.messages())).toContain('QUJD')
+
+    h.redactImages()
+    const m = h.messages()
+    expect(JSON.stringify(m)).not.toContain('QUJD')
+    expect(m[0]).toEqual({ role: 'user', content: [{ type: 'text', text: IMAGE_PLACEHOLDER }, { type: 'text', text: 'Was siehst du?' }] })
+    expect(m[2]).toEqual(redactImageBlocks(toolShot('t1')))
+    expect(m[3]).toEqual(assistant('Ein Editor.'))
+    expect(countTurns(m)).toBe(1)
+    expect(isToolResultMessage(m[2]!)).toBe(true)
+    h.save()
+    expect(createHistory(file).messages()).toEqual(m)
+    expect(h.view()[0]!.text).toBe(`${IMAGE_PLACEHOLDER}\nWas siehst du?`)
   })
 })

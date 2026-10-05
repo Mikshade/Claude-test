@@ -3,14 +3,17 @@
  *
  * OWNER: integration agent (keep this file the only place that knows about every module).
  */
+import fs from 'node:fs'
 import path from 'node:path'
-import { app, BrowserWindow, dialog, safeStorage, screen, shell } from 'electron'
-import { redactConfig } from '@shared/config'
+import { app, BrowserWindow, dialog, type IpcMainInvokeEvent, safeStorage, screen, shell } from 'electron'
+import { type FlowyConfig, redactConfig } from '@shared/config'
 import { buildSystemPrompt } from '@shared/personality'
 import { createAgent, type Agent } from './brain/agent'
 import { createHistory } from './brain/history'
+import { showNotification } from './brain/tools/misc'
 import { availableTools, disposeTools, type ToolServices } from './brain/tools/registry'
 import { ConfigStore, identityCipher, type SecretCipher } from './config/store'
+import { requestConfirmation } from './confirm'
 import { registerHotkeys, type HotkeyRegistration } from './hotkeys'
 import { handle } from './ipc'
 import { createLogger, initFileLog } from './log'
@@ -69,13 +72,21 @@ async function bootstrap(): Promise<void> {
     notes,
     system,
     // A due reminder becomes a proactive turn (the orchestrator is created below; this only runs later).
+    // While she is busy (or the overlay is gone) the turn is skipped – then a desktop toast carries it.
     onReminder: (message) => {
       const de = store.get().character.language === 'de'
-      void orchestrator.proactive(
-        de
-          ? `Eine Erinnerung ist fällig: "${message}". Sag dem Nutzer jetzt kurz Bescheid.`
-          : `A reminder is due: "${message}". Tell the user now, briefly.`,
-      )
+      const instruction = de
+        ? `Eine Erinnerung ist fällig: "${message}". Sag dem Nutzer jetzt kurz Bescheid.`
+        : `A reminder is due: "${message}". Tell the user now, briefly.`
+      void orchestrator
+        .proactive(instruction)
+        .then((turnId) => {
+          if (!turnId) showNotification(de ? 'Erinnerung' : 'Reminder', message)
+        })
+        .catch((err) => {
+          log.warn('reminder turn failed', err)
+          showNotification(de ? 'Erinnerung' : 'Reminder', message)
+        })
     },
   }
   const history = createHistory(historyFile())
@@ -121,11 +132,15 @@ async function bootstrap(): Promise<void> {
   })
   // Tools ask the user through the orchestrator's confirm UI.
   const orchestratorConfirm: (req: Parameters<ToolContextConfirm>[0]) => Promise<boolean> = (req) =>
-    confirmViaOrchestrator(orchestrator, overlay, req)
+    requestConfirmation(orchestrator, req)
 
   let hotkeys: HotkeyRegistration | null = null
   let tray: TrayController | null = null
   let muted = false
+  /** The start-up greeting runs once per app run (onReady/overlay:ready fire again on dev-server reloads). */
+  let greeted = false
+  /** Set once the renderer reported `overlay:ready` – before that nothing could show or play a greeting. */
+  let overlayReady = false
 
   function createOverlay(): void {
     overlay?.dispose()
@@ -133,18 +148,29 @@ async function bootstrap(): Promise<void> {
       config: store.get(),
       preloadPath,
       onReady: () => {
+        // Fires on every did-finish-load; the renderer queues these until its character is loaded.
         overlay?.send('config:changed', redactConfig(store.get()))
         overlay?.send('state:changed', orchestrator.state())
-        if (store.get().behavior.greetOnStart && store.get().setupCompleted) {
-          void orchestrator.proactive('greeting')
-        }
       },
     })
   }
 
+  /**
+   * Greet once: when the renderer runtime is up (character, bubble, player exist) and setup is complete –
+   * on a normal start right after `overlay:ready`, on the first run right after the wizard finished.
+   */
+  function maybeGreet(): void {
+    if (greeted || !overlayReady || !store.get().behavior.greetOnStart || !store.get().setupCompleted) return
+    greeted = true
+    void orchestrator.proactive('greeting').catch((err) => log.warn('greeting failed', err))
+  }
+
   const trayActions = {
     openSettings: (page?: string) => settings.open(page),
-    toggleVisibility: () => overlay?.setVisible(!overlay.isVisible()),
+    toggleVisibility: () => {
+      overlay?.setVisible(!overlay.isVisible())
+      refreshTray()
+    },
     togglePinned: () => store.patch({ avatar: { pinned: !store.get().avatar.pinned } }),
     toggleMuted: () => {
       muted = !muted
@@ -159,13 +185,24 @@ async function bootstrap(): Promise<void> {
     tray?.update(store.get(), orchestrator.state(), { visible: overlay?.isVisible() ?? false, muted })
   }
 
+  /**
+   * Only the settings window (opened by the user) may see clear-text API keys. The overlay – and any
+   * sender we cannot attribute to a window – gets the redacted copy.
+   */
+  function configForSender(e: IpcMainInvokeEvent, config: FlowyConfig): FlowyConfig {
+    const sender = BrowserWindow.fromWebContents(e.sender)
+    const isOverlay = sender !== null && overlay !== null && sender === overlay.window
+    const isSettings = sender !== null && sender === settings.current()
+    return !isOverlay && isSettings ? config : redactConfig(config)
+  }
+
   // ---- IPC handlers --------------------------------------------------------------------------
   handle('app:getInfo', async () => ({
     version: app.getVersion(),
     platform: process.platform,
     elevated: await system.isElevated(),
     userDataPath: app.getPath('userData'),
-    defaultModelPath: findDefaultModelJson(path.join(bundledModelsDir(), DEFAULT_MODEL_DIRNAME)) ?? '',
+    defaultModelPath: defaultModelJson() ?? '',
     live2dCoreAvailable: registerModelProtocol.coreAvailable(),
   }))
   handle('app:quit', () => app.quit())
@@ -188,9 +225,9 @@ async function bootstrap(): Promise<void> {
   })
   handle('app:closeSettings', () => settings.close())
 
-  handle('config:get', () => store.get())
-  handle('config:patch', (_e, patch) => store.patch(patch))
-  handle('config:completeSetup', () => store.patch({ setupCompleted: true }))
+  handle('config:get', (e) => configForSender(e, store.get()))
+  handle('config:patch', (e, patch) => configForSender(e, store.patch(patch)))
+  handle('config:completeSetup', (e) => configForSender(e, store.patch({ setupCompleted: true })))
   handle('config:testLlm', () => buildAgent().test())
   handle('config:testTts', async (_e, text) => {
     const client = createTtsClient(store.get().tts)
@@ -228,6 +265,10 @@ async function bootstrap(): Promise<void> {
   handle('overlay:setInteractive', (_e, interactive) => overlay?.setInteractive(interactive))
   handle('overlay:setFocus', (_e, focused) => overlay?.setFocus(focused))
   handle('overlay:reportBounds', () => undefined)
+  handle('overlay:ready', () => {
+    overlayReady = true
+    maybeGreet()
+  })
   handle('overlay:showContextMenu', () => {
     void import('./windows/contextMenu').then((m) =>
       m.showCharacterMenu(overlay?.window ?? null, trayActions, {
@@ -255,12 +296,18 @@ async function bootstrap(): Promise<void> {
     if (JSON.stringify(next.stt) !== JSON.stringify(prev.stt) || next.tts.fishCloud.apiKey !== prev.tts.fishCloud.apiKey) {
       stt = createSttClient(next.stt, next.tts)
     }
-    if (JSON.stringify(next.hotkeys) !== JSON.stringify(prev.hotkeys)) hotkeys?.apply(next.hotkeys)
+    if (JSON.stringify(next.hotkeys) !== JSON.stringify(prev.hotkeys)) {
+      const failed = hotkeys?.apply(next.hotkeys) ?? []
+      if (failed.length > 0) log.warn(`hotkeys not registered (invalid, duplicate or taken by another app): ${failed.join(', ')}`)
+    }
+    // refit() also stores the config; every other change is remembered so a later monitor hot-plug refits with it.
     if (next.display !== prev.display) overlay?.refit(next)
+    else overlay?.setConfig(next)
     if (next.autostart !== prev.autostart) app.setLoginItemSettings({ openAtLogin: next.autostart })
     overlay?.send('config:changed', redactConfig(next))
     settings.send('config:changed', next)
     refreshTray()
+    if (next.setupCompleted && !prev.setupCompleted) maybeGreet()
   })
   orchestrator.onState((state) => {
     overlay?.send('state:changed', state)
@@ -274,7 +321,15 @@ async function bootstrap(): Promise<void> {
   hotkeys = registerHotkeys(store.get().hotkeys, {
     pushToTalk: () => orchestrator.pushToTalk(),
     toggleVisibility: trayActions.toggleVisibility,
-    openChat: () => overlay?.send('ptt:start', { turnId: '' }),
+    openChat: () => {
+      if (!overlay) return
+      // A chat input on a hidden character would be invisible – bring her back first.
+      if (!overlay.isVisible()) {
+        overlay.setVisible(true)
+        refreshTray()
+      }
+      overlay.send('chat:open', {})
+    },
     interrupt: () => orchestrator.interrupt(),
   })
 
@@ -291,6 +346,8 @@ async function bootstrap(): Promise<void> {
     disposeTools(services)
     powershell.dispose()
     history.save()
+    overlay?.dispose()
+    overlay = null
   })
 
   // Pre-compile the Win32/CoreAudio interop in the PowerShell host so the first tool call is fast.
@@ -307,18 +364,23 @@ async function bootstrap(): Promise<void> {
 
 type ToolContextConfirm = import('./brain/tools/types').ToolContext['confirm']
 
-function confirmViaOrchestrator(
-  orchestrator: Orchestrator,
-  _overlay: OverlayWindow | null,
-  req: Parameters<ToolContextConfirm>[0],
-): Promise<boolean> {
-  return import('./confirm').then((m) => m.requestConfirmation(orchestrator, req))
+/** The bundled default `*.model3.json` (may sit one level below resources/models/default), or null. */
+function defaultModelJson(): string | null {
+  return findDefaultModelJson(path.join(bundledModelsDir(), DEFAULT_MODEL_DIRNAME))
 }
 
+/**
+ * Directory served as `flowy-model://model/`: the folder of the configured model, or – when none is
+ * configured or the file vanished – the folder of the bundled default model.
+ */
 function resolveModelDir(store: ConfigStore): string {
-  const configured = store.get().avatar.modelPath
-  if (configured) return path.dirname(configured)
-  return path.join(bundledModelsDir(), DEFAULT_MODEL_DIRNAME)
+  const configured = store.get().avatar.modelPath.trim()
+  if (configured) {
+    if (fs.existsSync(configured)) return path.dirname(configured)
+    log.warn(`configured Live2D model not found: ${configured} – serving the bundled model`)
+  }
+  const bundled = defaultModelJson()
+  return bundled ? path.dirname(bundled) : path.join(bundledModelsDir(), DEFAULT_MODEL_DIRNAME)
 }
 
 function trayIconPath(): string {

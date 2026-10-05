@@ -51,7 +51,8 @@ export interface Orchestrator {
   state(): CompanionState
   /** Hotkey pressed: start listening, or stop listening if already listening, or interrupt if speaking. */
   pushToTalk(): void
-  submitAudio(audio: RecordedAudio): Promise<string>
+  /** Recording result from the renderer; `null` = nothing usable (too short / no speech / mic failed) → back to idle. */
+  submitAudio(audio: RecordedAudio | null): Promise<string>
   submitText(text: string): Promise<string>
   interrupt(): void
   playbackFinished(turnId: string): void
@@ -90,6 +91,8 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
   let listeningTurnId: string | null = null
   let listeningTimer: ReturnType<typeof setTimeout> | null = null
   let discardNextAudio = false
+  /** Aborts a running transcription on interrupt. */
+  let sttController: AbortController | null = null
   let proactiveTimer: ReturnType<typeof setInterval> | null = null
   let lastActivityAt = now()
   let disposed = false
@@ -146,7 +149,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
 
   function stopListening(): void {
     send('ptt:stop', {})
-    // The renderer will call submitAudio (or nothing when the recording was empty → timer resets us).
+    // The renderer answers with submitAudio(audio | null); the timer only covers a renderer that never answers.
     clearListeningTimer()
     const turnId = listeningTurnId
     listeningTimer = setTimeout(() => {
@@ -205,11 +208,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
       }
     }
     if (signal.aborted) return { context }
-    const mode = config.screenAwareness.mode
-    const wantsScreenshot =
-      config.permissions.allowScreenshots &&
-      (mode === 'always' || source === 'proactive' || (mode === 'on-demand' && SCREEN_QUESTION_RE.test(text)))
-    if (!wantsScreenshot) return { context }
+    if (!wantsScreenshot(config, text, source)) return { context }
     try {
       const shot = await deps.captureScreen({
         display: config.display,
@@ -385,6 +384,8 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
     proactiveTimer = setInterval(() => {
       const cfg = deps.store.get()
       if (!cfg.behavior.proactive.enabled || state !== 'idle' || muted) return
+      // The periodic comment is about what is on screen – pointless (and misleading) without a screenshot.
+      if (!canSeeScreen(cfg)) return
       if (inQuietHours(new Date(now()).getHours(), cfg.behavior.proactive.quietHoursStart, cfg.behavior.proactive.quietHoursEnd)) return
       if (now() - lastActivityAt < intervalMs * 0.8) return
       void proactive(proactiveInstruction(cfg)).catch((err) => log.warn('proactive comment failed', err))
@@ -428,6 +429,12 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
       cancelListening()
       return
     }
+    if (state === 'transcribing' && !active) {
+      sttController?.abort()
+      sttController = null
+      setState('idle')
+      return
+    }
     const turn = active
     if (!turn) return
     active = null
@@ -468,6 +475,12 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
         discardNextAudio = false
         return ''
       }
+      if (!audio) {
+        // Too short / no speech / mic failed: the renderer already hid the bubble, we just stop waiting.
+        listeningTurnId = null
+        if (state === 'listening') setState('idle')
+        return ''
+      }
       const turnId = listeningTurnId ?? shortId('t')
       listeningTurnId = null
       const stt = deps.stt()
@@ -480,19 +493,22 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
       setState('transcribing')
       const config = deps.store.get()
       const controller = new AbortController()
+      sttController = controller
       let text = ''
       try {
         text = await stt.transcribe(audio, config.stt.language || config.character.language, controller.signal)
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
-        if (!(err instanceof Error && err.name === 'AbortError')) {
+        if (!(err instanceof Error && err.name === 'AbortError') && !controller.signal.aborted) {
           log.error('stt failed', message)
           sendError(turnId, 'stt', message)
         }
-        setState('idle')
+        if (sttController === controller) sttController = null
+        if (state === 'transcribing') setState('idle')
         return turnId
       }
-      if (state !== 'transcribing') return turnId // interrupted meanwhile
+      if (sttController === controller) sttController = null
+      if (state !== 'transcribing' || controller.signal.aborted) return turnId // interrupted meanwhile
       text = text.trim()
       if (!text) {
         sendError(turnId, 'stt', config.character.language === 'de' ? 'Ich habe nichts verstanden.' : 'I did not catch that.')
@@ -533,6 +549,8 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
     dispose() {
       disposed = true
       interrupt()
+      sttController?.abort()
+      sttController = null
       unsubscribeConfig()
       if (proactiveTimer) clearInterval(proactiveTimer)
       clearListeningTimer()
@@ -543,6 +561,21 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
       }
     },
   }
+}
+
+/** Screenshots are possible at all: the permission flag is on and screen awareness is not 'off'. */
+export function canSeeScreen(config: FlowyConfig): boolean {
+  return config.permissions.allowScreenshots && config.screenAwareness.mode !== 'off'
+}
+
+/**
+ * Attach a screenshot to this turn? 'always' → every turn; 'on-demand' → screen-like questions and
+ * proactive turns (the periodic comment is about the screen); 'off' / no permission → never.
+ */
+export function wantsScreenshot(config: FlowyConfig, text: string, source: 'voice' | 'text' | 'proactive'): boolean {
+  if (!canSeeScreen(config)) return false
+  const mode = config.screenAwareness.mode
+  return mode === 'always' || source === 'proactive' || SCREEN_QUESTION_RE.test(text)
 }
 
 /** Quiet hours may wrap around midnight (e.g. 23 → 8). */
