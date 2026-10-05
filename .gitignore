@@ -19,3 +19,6 @@ coverage/
 
 # TypeScript incremental build info
 *.tsbuildinfo
+
+# End-to-end test output
+test-results/

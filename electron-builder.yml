@@ -15,6 +15,12 @@ extraResources:
   - from: resources/ps
     to: ps
     filter: ["**/*"]
+  # Tray icons are read from process.resourcesPath at runtime (src/main/index.ts trayIconPath)
+  - from: resources
+    to: .
+    filter: ["tray.ico", "tray.png", "icon.png"]
+# Do not try to rebuild native modules (there are none; avoids node-gyp on CI)
+npmRebuild: false
 asar: true
 win:
   target:

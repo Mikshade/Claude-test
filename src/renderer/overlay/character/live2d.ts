@@ -11,6 +11,9 @@
  *   (model.focus() always snaps to a unit vector).
  */
 import * as PIXI from 'pixi.js'
+// Pixi 7 compiles shaders with new Function(); the overlay CSP forbids unsafe-eval, so install the
+// eval-free code paths (self-installing side-effect import, patches the shared @pixi/core ShaderSystem).
+import '@pixi/unsafe-eval'
 import type { Cubism4InternalModel, Live2DModel } from 'pixi-live2d-display-lipsyncpatch/cubism4'
 import type { CompanionState, Emotion, Point, Rect } from '@shared/state'
 import { LIVELY_EMOTIONS, matchAttentiveExpression, matchExpression, matchMotionGroup } from './emotions'

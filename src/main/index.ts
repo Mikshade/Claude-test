@@ -133,6 +133,8 @@ async function bootstrap(): Promise<void> {
   // Tools ask the user through the orchestrator's confirm UI.
   const orchestratorConfirm: (req: Parameters<ToolContextConfirm>[0]) => Promise<boolean> = (req) =>
     requestConfirmation(orchestrator, req)
+  // End-to-end tests drive push-to-talk etc. from the main process (global hotkeys cannot be pressed there).
+  if (process.env['FLOWY_E2E'] === '1') (globalThis as Record<string, unknown>)['__flowyE2E'] = { orchestrator, store }
 
   let hotkeys: HotkeyRegistration | null = null
   let tray: TrayController | null = null

@@ -357,10 +357,15 @@ function startFrameLoop(r: Runtime): void {
   requestAnimationFrame(frame)
 }
 
-/** She came to rest: re-anchor the bubble and tell main where she is. */
+/**
+ * She came to rest: re-anchor the bubble and tell main where she is. Uses the movement controller's
+ * resting rect – the character view only learns its position in the next frame (at boot and after a
+ * rebuild it would still report 0,0 and the bubble would end up in the top-left corner).
+ */
 function onLanded(r: Runtime): void {
-  r.bubble.setAnchor(r.character.bounds(), r.workArea)
-  void api.invoke('overlay:reportBounds', r.mover.bounds()).catch(warn('reportBounds'))
+  const rect = r.mover.bounds()
+  r.bubble.setAnchor(rect, r.workArea)
+  void api.invoke('overlay:reportBounds', rect).catch(warn('reportBounds'))
 }
 
 function flyAway(r: Runtime): void {
