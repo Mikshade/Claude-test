@@ -1,0 +1,68 @@
+name: Windows build
+
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      # Accept the Live2D licenses non-interactively for the bundled sample model (see npm run setup:live2d).
+      FLOWY_ACCEPT_LIVE2D: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download Live2D Cubism Core + sample model
+        run: npm run setup:live2d -- --yes
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npx vitest run
+
+      - name: Build
+        run: npm run build
+
+      - name: Windows integration smoke test (PowerShell host, Win32, tools)
+        run: node tests/e2e/windows-smoke.cjs
+
+      - name: End-to-end tests (real app, mock APIs)
+        run: npm run test:e2e
+
+      - name: Package (installer, portable exe, zip)
+        run: npx electron-builder --win --x64 --publish never
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Flowy-Windows
+          path: |
+            release/Flowy-Setup-*.exe
+            release/Flowy-Portable-*.exe
+            release/Flowy-*-win.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload test screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14

@@ -11,7 +11,7 @@ import { buildSystemPrompt } from '@shared/personality'
 import { createAgent, type Agent } from './brain/agent'
 import { createHistory } from './brain/history'
 import { showNotification } from './brain/tools/misc'
-import { availableTools, disposeTools, type ToolServices } from './brain/tools/registry'
+import { allTools, availableTools, disposeTools, type ToolServices } from './brain/tools/registry'
 import { ConfigStore, identityCipher, type SecretCipher } from './config/store'
 import { requestConfirmation } from './confirm'
 import { registerHotkeys, type HotkeyRegistration } from './hotkeys'
@@ -133,8 +133,28 @@ async function bootstrap(): Promise<void> {
   // Tools ask the user through the orchestrator's confirm UI.
   const orchestratorConfirm: (req: Parameters<ToolContextConfirm>[0]) => Promise<boolean> = (req) =>
     requestConfirmation(orchestrator, req)
-  // End-to-end tests drive push-to-talk etc. from the main process (global hotkeys cannot be pressed there).
-  if (process.env['FLOWY_E2E'] === '1') (globalThis as Record<string, unknown>)['__flowyE2E'] = { orchestrator, store }
+  // End-to-end tests drive push-to-talk, the Windows integration and single tools from the main process
+  // (global hotkeys cannot be pressed there). Never enabled outside the test scripts in tests/e2e.
+  if (process.env['FLOWY_E2E'] === '1') {
+    ;(globalThis as Record<string, unknown>)['__flowyE2E'] = {
+      orchestrator,
+      store,
+      system,
+      powershell,
+      async runTool(name: string, input: unknown) {
+        const tool = allTools(services).find((t) => t.name === name)
+        if (!tool) throw new Error(`unknown tool ${name}`)
+        const parsed = tool.inputSchema.safeParse(input)
+        if (!parsed.success) throw new Error(`invalid input for ${name}: ${parsed.error.message}`)
+        return tool.execute(parsed.data, {
+          config: store.get(),
+          signal: new AbortController().signal,
+          confirm: async () => true,
+          progress: () => undefined,
+        })
+      },
+    }
+  }
 
   let hotkeys: HotkeyRegistration | null = null
   let tray: TrayController | null = null

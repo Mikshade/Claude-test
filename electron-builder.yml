@@ -26,11 +26,15 @@ win:
   target:
     - nsis
     - portable
+    - zip
   icon: resources/icon.ico
   # 'asInvoker' = normal user rights. The app offers an in-app "Restart as administrator"
   # action for full root access; set this to 'requireAdministrator' to always elevate.
   requestedExecutionLevel: asInvoker
+portable:
+  artifactName: Flowy-Portable-${version}.exe
 nsis:
+  artifactName: Flowy-Setup-${version}.exe
   oneClick: false
   allowToChangeInstallationDirectory: true
   perMachine: false
