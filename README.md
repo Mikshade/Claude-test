@@ -40,8 +40,11 @@ Assistent zur Hand geht:
 
 ### Screenshots
 
-> _Platzhalter – Screenshots folgen, sobald der erste Windows-Build steht._
-> `docs/screenshots/overlay.png`, `docs/screenshots/wizard.png`, `docs/screenshots/settings.png`
+Aufgenommen aus den automatischen End-to-End-Tests (echte App, Beispielmodell Hiyori):
+
+| Sie antwortet (Sprechblase, gesprochener Satz hervorgehoben) | Einrichtungsassistent | Einstellungen |
+| --- | --- | --- |
+| ![Overlay](docs/screenshots/overlay.png) | ![Wizard](docs/screenshots/wizard.png) | ![Einstellungen](docs/screenshots/settings.png) |
 
 ## Voraussetzungen
 
@@ -54,21 +57,35 @@ Assistent zur Hand geht:
 | Fish Audio | Ein API-Key von https://fish.audio/app/api-keys (kostenloses TTS-Modell vorhanden) – oder ein lokaler Fish-Speech-Server |
 | Mikrofon | Für Push-to-Talk (optional – tippen geht immer) |
 
-## Schnellstart
+## Fertige Windows-Version herunterladen (ohne Programmieren)
+
+Jeder Push baut Flowy automatisch auf einem echten Windows-Rechner (GitHub Actions, Workflow „Windows build“),
+führt alle Tests aus und legt die fertigen Dateien als Download ab:
+
+1. Auf GitHub im Repository **Actions → Windows build** öffnen und den neuesten grünen Lauf anklicken.
+2. Unten unter **Artifacts** auf **Flowy-Windows** klicken (ZIP-Download, GitHub-Login nötig) und entpacken.
+3. Eine der drei Varianten wählen:
+   - `Flowy-Setup-0.1.0.exe` – Installer mit Startmenü-Eintrag (empfohlen),
+   - `Flowy-Portable-0.1.0.exe` – ein einzelnes Programm, startet ohne Installation,
+   - `Flowy-0.1.0-win.zip` – entpacken und `Flowy.exe` starten.
+4. Windows SmartScreen warnt bei unsignierten Programmen: **Weitere Informationen → Trotzdem ausführen**.
+5. Beim ersten Start öffnet sich der Einrichtungsassistent (API-Keys eintragen, Stimme wählen) – fertig.
+
+## Schnellstart (aus dem Quellcode)
 
 ```powershell
 git clone <repo-url> flowy
 cd flowy
-npm install --legacy-peer-deps      # Abhängigkeiten (pixi.js 7 + Live2D-Plugin brauchen den Schalter)
+npm install                         # .npmrc setzt legacy-peer-deps (pixi.js 7 + Live2D-Plugin)
 npm run setup:live2d                # Live2D Cubism Core + Beispielmodell laden (fragt nach Lizenz-Zustimmung)
-npm run dev                         # Entwicklung: startet Electron mit Hot-Reload
+npm run build && npm start          # bauen und starten
+npm run dev                         # alternativ: Entwicklung mit Hot-Reload
 ```
 
-Installer bauen:
+Installer selbst bauen:
 
 ```powershell
-npm run dist              # NSIS-Installer → release/Flowy Setup 0.1.0.exe
-npm run dist:portable     # portable EXE → release/
+npm run dist              # NSIS-Installer, portable EXE und ZIP → release/
 ```
 
 `npm run setup:live2d` ist idempotent (vorhandene Dateien werden übersprungen), kennt `--yes` (oder die
@@ -275,10 +292,11 @@ Logs: `%APPDATA%\Flowy\logs\flowy.log` (rotiert bei 5 MB).
 Entwickelt wird Linux-freundlich – nur die Oberfläche braucht Windows:
 
 ```bash
-npm install --legacy-peer-deps
+npm install
 npm run typecheck        # tsc für main/preload (Node) und renderer (DOM)
 npm test                 # vitest, electron ist auf tests/mocks/electron.ts gealiast
 npm run build            # electron-vite build → out/
+npm run test:e2e         # echte App gegen lokale Mock-Server (Linux: xvfb-run -a npm run test:e2e)
 npm run setup:live2d -- --yes --lang en   # nicht-interaktiv
 node scripts/setup-live2d.mjs --help
 ```
@@ -323,8 +341,11 @@ personal assistant:
 
 ### Screenshots
 
-> _Placeholder – screenshots will follow with the first Windows build._
-> `docs/screenshots/overlay.png`, `docs/screenshots/wizard.png`, `docs/screenshots/settings.png`
+Captured by the automated end-to-end tests (real app, Hiyori sample model):
+
+| She answers (bubble, spoken sentence highlighted) | Setup wizard | Settings |
+| --- | --- | --- |
+| ![Overlay](docs/screenshots/overlay.png) | ![Wizard](docs/screenshots/wizard.png) | ![Settings](docs/screenshots/settings.png) |
 
 ## Requirements
 
@@ -337,21 +358,35 @@ personal assistant:
 | Fish Audio | An API key from https://fish.audio/app/api-keys (a free TTS model exists) – or a local Fish Speech server |
 | Microphone | For push-to-talk (optional – typing always works) |
 
-## Quick start
+## Download the ready-made Windows build (no coding)
+
+Every push builds Flowy on a real Windows machine (GitHub Actions, workflow "Windows build"), runs all tests and
+stores the finished files for download:
+
+1. On GitHub open **Actions → Windows build** and click the newest green run.
+2. Under **Artifacts** click **Flowy-Windows** (zip download, GitHub login required) and extract it.
+3. Pick one:
+   - `Flowy-Setup-0.1.0.exe` – installer with a Start menu entry (recommended),
+   - `Flowy-Portable-0.1.0.exe` – a single program, runs without installing,
+   - `Flowy-0.1.0-win.zip` – extract and start `Flowy.exe`.
+4. Windows SmartScreen warns about unsigned programs: **More info → Run anyway**.
+5. The setup wizard opens on first start (enter API keys, pick a voice) – done.
+
+## Quick start (from source)
 
 ```powershell
 git clone <repo-url> flowy
 cd flowy
-npm install --legacy-peer-deps      # dependencies (pixi.js 7 + the Live2D plugin need the flag)
+npm install                         # .npmrc sets legacy-peer-deps (pixi.js 7 + the Live2D plugin)
 npm run setup:live2d                # download Live2D Cubism Core + sample model (asks you to accept the licenses)
-npm run dev                         # development: starts Electron with hot reload
+npm run build && npm start          # build and start
+npm run dev                         # or: development with hot reload
 ```
 
-Build installers:
+Build the installers yourself:
 
 ```powershell
-npm run dist              # NSIS installer → release/Flowy Setup 0.1.0.exe
-npm run dist:portable     # portable EXE → release/
+npm run dist              # NSIS installer, portable exe and zip → release/
 ```
 
 `npm run setup:live2d` is idempotent (existing files are skipped), supports `--yes` (or `FLOWY_ACCEPT_LIVE2D=1`) for
@@ -551,7 +586,7 @@ Logs: `%APPDATA%\Flowy\logs\flowy.log` (rotated at 5 MB).
 Development is Linux-friendly – only the GUI needs Windows:
 
 ```bash
-npm install --legacy-peer-deps
+npm install
 npm run typecheck        # tsc for main/preload (Node) and renderer (DOM)
 npm test                 # vitest, electron is aliased to tests/mocks/electron.ts
 npm run build            # electron-vite build → out/

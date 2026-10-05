@@ -47,13 +47,15 @@ afterEach(() => {
 
 describe('safeJoin', () => {
   it('joins relative paths inside the root', () => {
-    expect(safeJoin('/models/haru', 'haru.model3.json')).toBe('/models/haru/haru.model3.json')
-    expect(safeJoin('/models/haru', 'haru.2048/texture_00.png')).toBe('/models/haru/haru.2048/texture_00.png')
+    // Native semantics: on Windows '/models/haru' resolves to '<drive>:\\models\\haru'.
+    const root = path.resolve('/models/haru')
+    expect(safeJoin('/models/haru', 'haru.model3.json')).toBe(path.join(root, 'haru.model3.json'))
+    expect(safeJoin('/models/haru', 'haru.2048/texture_00.png')).toBe(path.join(root, 'haru.2048', 'texture_00.png'))
     expect(safeJoin('/models/haru', 'motions/../expressions/f01.exp3.json')).toBe(
-      '/models/haru/expressions/f01.exp3.json',
+      path.join(root, 'expressions', 'f01.exp3.json'),
     )
-    expect(safeJoin('/models/haru/', './haru.moc3')).toBe('/models/haru/haru.moc3')
-    expect(safeJoin('/models/haru', '..foo/bar')).toBe('/models/haru/..foo/bar')
+    expect(safeJoin('/models/haru/', './haru.moc3')).toBe(path.join(root, 'haru.moc3'))
+    expect(safeJoin('/models/haru', '..foo/bar')).toBe(path.join(root, '..foo', 'bar'))
   })
 
   it('rejects traversal out of the root', () => {
