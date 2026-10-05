@@ -63,11 +63,12 @@ Jeder Push baut Flowy automatisch auf einem echten Windows-Rechner (GitHub Actio
 führt alle Tests aus und legt die fertigen Dateien als Download ab:
 
 1. Auf GitHub im Repository **Actions → Windows build** öffnen und den neuesten grünen Lauf anklicken.
-2. Unten unter **Artifacts** auf **Flowy-Windows** klicken (ZIP-Download, GitHub-Login nötig) und entpacken.
-3. Eine der drei Varianten wählen:
-   - `Flowy-Setup-0.1.0.exe` – Installer mit Startmenü-Eintrag (empfohlen),
-   - `Flowy-Portable-0.1.0.exe` – ein einzelnes Programm, startet ohne Installation,
-   - `Flowy-0.1.0-win.zip` – entpacken und `Flowy.exe` starten.
+2. Unten unter **Artifacts** eine Variante herunterladen (GitHub-Login nötig; GitHub packt sie in eine ZIP-Datei,
+   die du einmal entpackst):
+   - **Flowy-Setup** → `Flowy-Setup-0.1.0.exe` – Installer mit Startmenü-Eintrag (empfohlen),
+   - **Flowy-Portable** → `Flowy-Portable-0.1.0.exe` – ein einzelnes Programm, startet ohne Installation,
+   - **Flowy-Zip** → `Flowy-0.1.0-win.zip` – entpacken und `Flowy.exe` starten.
+3. Die `.exe` starten.
 4. Windows SmartScreen warnt bei unsignierten Programmen: **Weitere Informationen → Trotzdem ausführen**.
 5. Beim ersten Start öffnet sich der Einrichtungsassistent (API-Keys eintragen, Stimme wählen) – fertig.
 
@@ -364,11 +365,11 @@ Every push builds Flowy on a real Windows machine (GitHub Actions, workflow "Win
 stores the finished files for download:
 
 1. On GitHub open **Actions → Windows build** and click the newest green run.
-2. Under **Artifacts** click **Flowy-Windows** (zip download, GitHub login required) and extract it.
-3. Pick one:
-   - `Flowy-Setup-0.1.0.exe` – installer with a Start menu entry (recommended),
-   - `Flowy-Portable-0.1.0.exe` – a single program, runs without installing,
-   - `Flowy-0.1.0-win.zip` – extract and start `Flowy.exe`.
+2. Under **Artifacts** download one variant (GitHub login required; GitHub wraps it in a zip you extract once):
+   - **Flowy-Setup** → `Flowy-Setup-0.1.0.exe` – installer with a Start menu entry (recommended),
+   - **Flowy-Portable** → `Flowy-Portable-0.1.0.exe` – a single program, runs without installing,
+   - **Flowy-Zip** → `Flowy-0.1.0-win.zip` – extract and start `Flowy.exe`.
+3. Start the `.exe`.
 4. Windows SmartScreen warns about unsigned programs: **More info → Run anyway**.
 5. The setup wizard opens on first start (enter API keys, pick a voice) – done.
 

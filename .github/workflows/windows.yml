@@ -47,15 +47,32 @@ jobs:
       - name: Package (installer, portable exe, zip)
         run: npx electron-builder --win --x64 --publish never
 
-      - name: Upload Windows build
+      # One artifact per variant so a download is ~130 MB instead of all three at once.
+      - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: Flowy-Windows
-          path: |
-            release/Flowy-Setup-*.exe
-            release/Flowy-Portable-*.exe
-            release/Flowy-*-win.zip
+          name: Flowy-Setup
+          path: release/Flowy-Setup-*.exe
           if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Upload portable exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: Flowy-Portable
+          path: release/Flowy-Portable-*.exe
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Upload zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Flowy-Zip
+          path: release/Flowy-*-win.zip
+          if-no-files-found: error
+          compression-level: 0
           retention-days: 30
 
       - name: Upload test screenshots
