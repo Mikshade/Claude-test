@@ -5,7 +5,17 @@ import type { SpeechChunk } from '@shared/state'
 import type { Agent, AgentCallbacks, AgentResult, TurnInput } from './brain/agent'
 import type { ConfigStore } from './config/store'
 import type { NotesStore } from './memory/notes'
-import { canSeeScreen, createOrchestrator, inQuietHours, type Orchestrator, type OrchestratorDeps, wantsScreenshot } from './orchestrator'
+import {
+  canSeeScreen,
+  createOrchestrator,
+  inQuietHours,
+  LISTENING_GRACE_MS,
+  type Orchestrator,
+  type OrchestratorDeps,
+  PLAYBACK_TIMEOUT_MIN_MS,
+  playbackTimeoutMs,
+  wantsScreenshot,
+} from './orchestrator'
 import type { SttClient } from './stt/types'
 import type { TtsClient } from './tts/types'
 import type { WindowsSystem } from './system/windows'
@@ -31,9 +41,10 @@ function fakeStore(patch: DeepPartial<FlowyConfig> = {}): ConfigStore {
   } as unknown as ConfigStore
 }
 
-function fakeOverlay(sent: Sent[]): OverlayWindow {
+function fakeOverlay(sent: Sent[], visible: { value: boolean } = { value: true }): OverlayWindow {
   return {
     send: (channel: PushChannel, payload: unknown) => sent.push({ channel, payload }),
+    isVisible: () => visible.value,
   } as unknown as OverlayWindow
 }
 
@@ -110,10 +121,11 @@ function setup(opts: {
   capture?: OrchestratorDeps['captureScreen']
 } = {}) {
   const sent: Sent[] = []
+  const visible = { value: true }
   const store = fakeStore(opts.config)
   const deps: OrchestratorDeps = {
     store,
-    overlay: () => fakeOverlay(sent),
+    overlay: () => fakeOverlay(sent, visible),
     agent: () => opts.agent ?? fakeAgent({ deltas: ['Hallo, schön dich zu sehen! ', 'Wie geht es dir heute?'] }),
     tts: () => (opts.tts === undefined ? fakeTts() : opts.tts),
     stt: () => (opts.stt === undefined ? fakeStt('Wie spät ist es?') : opts.stt),
@@ -126,7 +138,7 @@ function setup(opts: {
   const orchestrator = createOrchestrator(deps)
   const states: string[] = []
   orchestrator.onState((s) => states.push(s))
-  return { orchestrator, sent, states, store }
+  return { orchestrator, sent, states, store, visible }
 }
 
 function channels(sent: Sent[]): string[] {
@@ -447,9 +459,174 @@ describe('orchestrator', () => {
     const onDemand = parseConfig(mergeConfig(DEFAULT_CONFIG, { screenAwareness: { mode: 'on-demand' } }))
     expect(wantsScreenshot(onDemand, 'Was siehst du?', 'text')).toBe(true)
     expect(wantsScreenshot(onDemand, 'Erzähl einen Witz', 'voice')).toBe(false)
-    expect(wantsScreenshot(onDemand, 'x', 'proactive')).toBe(true)
+    // greeting / reminders never look at the screen in on-demand mode; the periodic glance asks explicitly
+    expect(wantsScreenshot(onDemand, 'Was siehst du?', 'proactive')).toBe(false)
+    expect(wantsScreenshot(onDemand, 'x', 'proactive', true)).toBe(true)
     const noPermission = parseConfig(mergeConfig(DEFAULT_CONFIG, { permissions: { allowScreenshots: false } }))
     expect(wantsScreenshot(noPermission, 'Was siehst du?', 'text')).toBe(false)
+  })
+})
+
+describe('orchestrator review fixes', () => {
+  let orchestrator: Orchestrator | null = null
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    orchestrator?.dispose()
+    orchestrator = null
+    vi.useRealTimers()
+  })
+
+  it('PIPE-1: a new turn waits until the interrupted run finished writing its history', async () => {
+    const events: string[] = []
+    let runs = 0
+    const agent: Agent = {
+      async run(input, callbacks, signal) {
+        const n = ++runs
+        events.push(`start:${n}`)
+        callbacks.onText('Moment. ')
+        // The interrupted run keeps going for a while after the abort (late history appends).
+        await new Promise<void>((resolve) => {
+          const done = (): void => {
+            setTimeout(() => {
+              events.push(`end:${n}`)
+              resolve()
+            }, 40)
+          }
+          if (signal.aborted) done()
+          else signal.addEventListener('abort', done)
+          if (n > 1) setTimeout(done, 1)
+        })
+        return { text: input.text, stopReason: 'end_turn', aborted: signal.aborted, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 } }
+      },
+      test: async () => ({ ok: true, message: 'ok' }),
+      update: () => undefined,
+    }
+    const s = setup({ agent, tts: null, config: { screenAwareness: { mode: 'off', includeActiveWindow: false } } })
+    orchestrator = s.orchestrator
+    void orchestrator.submitText('erste Frage')
+    await settle(5)
+    void orchestrator.submitText('zweite Frage')
+    await settle(120)
+    expect(events.indexOf('start:2')).toBeGreaterThan(events.indexOf('end:1'))
+  })
+
+  it('PIPE-2: interrupt denies an open confirm prompt and closes it in the renderer', async () => {
+    const s = setup()
+    orchestrator = s.orchestrator
+    const answer = orchestrator.confirm({ title: 'Ordner löschen?', detail: 'C:\\Projekt', danger: true })
+    const req = s.sent.find((x) => x.channel === 'confirm:request')?.payload as { id: string }
+    orchestrator.interrupt()
+    expect(await answer).toBe(false)
+    expect(s.sent.find((x) => x.channel === 'confirm:resolved')?.payload).toEqual({ id: req.id })
+    // a late "Ja" from the stale panel is ignored
+    orchestrator.answerConfirm(req.id, true)
+    expect(await answer).toBe(false)
+  })
+
+  it('PIPE-3: in on-demand mode the greeting and reminders carry no screenshot', async () => {
+    const calls: TurnInput[] = []
+    const capture = vi.fn(async () => ({ base64: 'B', mediaType: 'image/jpeg' as const, width: 1, height: 1, bytes: 1 }))
+    const s = setup({ agent: fakeAgent({ deltas: ['Hi!'] }, calls), tts: null, capture, config: { screenAwareness: { mode: 'on-demand' } } })
+    orchestrator = s.orchestrator
+    await orchestrator.proactive('greeting')
+    await orchestrator.proactive('Eine Erinnerung ist fällig: "Tee". Was siehst du?')
+    expect(calls).toHaveLength(2)
+    expect(capture).not.toHaveBeenCalled()
+    await orchestrator.proactive('glance', { screen: true })
+    expect(capture).toHaveBeenCalledTimes(1)
+  })
+
+  it('PIPE-4: no proactive turn while she is hidden', async () => {
+    const calls: TurnInput[] = []
+    const s = setup({
+      agent: fakeAgent({ deltas: ['Hi!'] }, calls),
+      config: { behavior: { proactive: { enabled: true, intervalMinutes: 2, quietHoursStart: 0, quietHoursEnd: 0 } } },
+    })
+    orchestrator = s.orchestrator
+    s.visible.value = false
+    expect(await orchestrator.proactive('greeting')).toBe('')
+    await vi.advanceTimersByTimeAsync(2 * 60_000 + 10)
+    await settle(20)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('PIPE-5: a push-to-talk press while transcribing keeps the utterance', async () => {
+    let release: (text: string) => void = () => undefined
+    const stt: SttClient = {
+      name: 'slow',
+      transcribe: () => new Promise<string>((resolve) => (release = resolve)),
+      test: async () => ({ ok: true, message: 'ok' }),
+    }
+    const calls: TurnInput[] = []
+    const s = setup({ stt, tts: null, agent: fakeAgent({ deltas: ['Ok.'] }, calls) })
+    orchestrator = s.orchestrator
+    orchestrator.pushToTalk()
+    const p = orchestrator.submitAudio({ data: new ArrayBuffer(4), mimeType: 'audio/wav', durationMs: 900 })
+    await settle(2)
+    expect(orchestrator.state()).toBe('transcribing')
+    orchestrator.pushToTalk()
+    expect(orchestrator.state()).toBe('transcribing')
+    expect(channels(s.sent).filter((c) => c === 'ptt:start')).toHaveLength(1)
+    release('Mach das Fenster zu')
+    await p
+    await settle(10)
+    expect(calls[0]?.text).toBe('Mach das Fenster zu')
+  })
+
+  it('PIPE-6: a quiet glance that stays silent leaves no trace; one that speaks shows the UI', async () => {
+    const silent = setup({ agent: fakeAgent({ deltas: ['[[sil', 'ence]]'] }) })
+    orchestrator = silent.orchestrator
+    await orchestrator.proactive('glance', { screen: true, quiet: true })
+    await settle(20)
+    expect(silent.states).toEqual([])
+    expect(channels(silent.sent)).not.toContain('turn:started')
+    expect(channels(silent.sent)).not.toContain('turn:assistantDone')
+    expect(channels(silent.sent)).not.toContain('speech:chunk')
+    orchestrator.dispose()
+
+    const talking = setup({ agent: fakeAgent({ deltas: ['[[happy]] ', 'Schöner Code da!'] }) })
+    orchestrator = talking.orchestrator
+    void orchestrator.proactive('glance', { screen: true, quiet: true })
+    await settle(60)
+    expect(talking.states[0]).toBe('thinking')
+    expect(channels(talking.sent)).toContain('turn:started')
+    const deltas = talking.sent.filter((x) => x.channel === 'turn:assistantDelta').map((x) => (x.payload as { delta: string }).delta)
+    expect(deltas.join('')).toContain('Schöner Code da!')
+    expect(channels(talking.sent)).toContain('speech:chunk')
+  })
+
+  it('PIPE-7: the listening safety net follows stt.maxRecordingMs', async () => {
+    const s = setup({ config: { stt: { maxRecordingMs: 60_000 } } })
+    orchestrator = s.orchestrator
+    orchestrator.pushToTalk()
+    await vi.advanceTimersByTimeAsync(50_000)
+    expect(orchestrator.state()).toBe('listening')
+    await vi.advanceTimersByTimeAsync(10_000 + LISTENING_GRACE_MS)
+    expect(orchestrator.state()).toBe('idle')
+  })
+
+  it('PIPE-8: state is speaking from the first chunk; muting silences her but keeps the text', async () => {
+    const s = setup({ agent: fakeAgent({ deltas: ['Erster langer Satz hier. ', 'Zweiter Satz kommt. ', 'Dritter Satz.'], delayMs: 30 }) })
+    orchestrator = s.orchestrator
+    void orchestrator.submitText('Erzähl was')
+    await settle(70)
+    expect(channels(s.sent)).toContain('speech:chunk')
+    expect(orchestrator.state()).toBe('speaking')
+    orchestrator.setMuted(true)
+    expect(channels(s.sent)).toContain('speech:stop')
+    const chunksBefore = s.sent.filter((x) => x.channel === 'speech:chunk').length
+    await settle(150)
+    expect(s.sent.filter((x) => x.channel === 'speech:chunk').length).toBe(chunksBefore)
+    expect(s.sent.find((x) => x.channel === 'turn:assistantDone')?.payload).toMatchObject({ text: expect.stringContaining('Dritter Satz.') })
+    expect(orchestrator.state()).toBe('idle')
+  })
+
+  it('PIPE-10: the playback safety net grows with the amount of text', () => {
+    expect(playbackTimeoutMs(10)).toBe(PLAYBACK_TIMEOUT_MIN_MS)
+    // ~6 minutes of speech (≈ 5000 characters) must not be cut off after 3 minutes
+    expect(playbackTimeoutMs(5000)).toBeGreaterThan(6 * 60_000)
   })
 })
 

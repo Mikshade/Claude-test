@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { fakeContext } from './fakes.test'
-import { DENIED_MESSAGE, defineTool, errorMessage, isCatastrophic, shorten, truncateText, wrapTool } from './gating'
+import { ABORTED_MESSAGE, DENIED_MESSAGE, defineTool, errorMessage, isCatastrophic, shorten, truncateText, wrapTool } from './gating'
 
 describe('isCatastrophic', () => {
   it.each([
@@ -118,6 +118,18 @@ describe('wrapTool', () => {
 
     const approved = fakeContext({ permissions: { level: 'confirm-destructive' } }, { approve: true })
     expect(await wrapped.execute({ script: 'x' }, approved)).toEqual({ content: 'ran x' })
+  })
+
+  it('never executes on an approval that arrives after the turn was interrupted', async () => {
+    const { wrapped, execute } = sampleTool()
+    const controller = new AbortController()
+    const ctx = fakeContext({ permissions: { level: 'confirm-destructive' } }, { approve: true, signal: controller.signal })
+    ctx.confirm.mockImplementation(async () => {
+      controller.abort() // the user pressed push-to-talk while the prompt was open
+      return true
+    })
+    expect(await wrapped.execute({ script: 'x' }, ctx)).toEqual({ isError: true, content: ABORTED_MESSAGE })
+    expect(execute).not.toHaveBeenCalled()
   })
 
   it('does not prompt for non-destructive tools at confirm-destructive', async () => {

@@ -437,7 +437,8 @@ async function onPttStop(r: Runtime): Promise<void> {
 
 /** Forward the recording to main; `null` (too short / no speech) still goes up so main leaves 'listening'. */
 async function submitAudio(r: Runtime, audio: Awaited<ReturnType<Recorder['stop']>>): Promise<void> {
-  if (!audio) r.bubble.hide(0)
+  // Only when nothing else is going on – a stale null (auto-stop race) must not hide a running turn.
+  if (!audio && r.state === 'listening') r.bubble.hide(0)
   try {
     await api.invoke('turn:submitAudio', audio)
   } catch (err) {

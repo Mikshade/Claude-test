@@ -18,6 +18,7 @@ import { type AnyTool, isToolAllowed, type ToolContent, type ToolDefinition, typ
 const log = createLogger('tools')
 
 export const DENIED_MESSAGE = 'Vom Nutzer abgelehnt.'
+export const ABORTED_MESSAGE = 'Abgebrochen – die Anfrage wurde unterbrochen.'
 
 export interface ConfirmText {
   title: string
@@ -216,6 +217,8 @@ export function wrapTool(tool: AnyFlowyTool): AnyTool {
             return fail(DENIED_MESSAGE)
           }
         }
+        // The turn may have been interrupted while the prompt was open – never act on a stale approval.
+        if (ctx.signal.aborted) return fail(ABORTED_MESSAGE)
         return await tool.execute(input, ctx)
       } catch (err) {
         log.warn(`tool ${tool.name} failed`, err instanceof Error ? err.message : err)

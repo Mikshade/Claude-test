@@ -25,14 +25,25 @@ import type { OverlayWindow } from './windows/overlay'
 
 const log = createLogger('orchestrator')
 
-/** How long we wait for the renderer to finish playing after the last chunk was sent. */
-export const PLAYBACK_TIMEOUT_MS = 180_000
-/** How long a recording may take before we give up waiting for 'turn:submitAudio'. */
-export const LISTENING_TIMEOUT_MS = 45_000
+/** Minimum safety net for the renderer's 'turn:playbackFinished' after the last chunk was sent. */
+export const PLAYBACK_TIMEOUT_MIN_MS = 60_000
+/** Conservative speaking rate used to size the playback safety net (characters per second). */
+export const PLAYBACK_CHARS_PER_SECOND = 8
+/** Added to stt.maxRecordingMs before we give up waiting for 'turn:submitAudio'. */
+export const LISTENING_GRACE_MS = 5_000
 /** Confirm prompts resolve to "denied" after this. */
 export const CONFIRM_TIMEOUT_MS = 60_000
+/** A new turn waits at most this long for the interrupted turn to finish writing its history. */
+export const RUN_SETTLE_TIMEOUT_MS = 5_000
 /** The proactive comment instruction tells the model to answer with exactly this when it has nothing to say. */
 export const SILENCE_MARKER = '[[silence]]'
+
+export interface ProactiveOptions {
+  /** Attach a screenshot even in 'on-demand' mode (the periodic glance is about the screen). */
+  screen?: boolean
+  /** Show no UI (no "thinking" state, no bubble) until she actually says something. */
+  quiet?: boolean
+}
 
 export interface OrchestratorDeps {
   store: ConfigStore
@@ -59,8 +70,11 @@ export interface Orchestrator {
   answerConfirm(id: string, approved: boolean): void
   /** Ask the user to approve something (used by tools). Resolves false on timeout/dismiss. */
   confirm(request: Omit<ConfirmRequest, 'id'>): Promise<boolean>
-  /** Greeting / proactive comment entry point ('greeting' or a free instruction). Resolves with the turn id ('' when skipped). */
-  proactive(instruction: string): Promise<string>
+  /**
+   * Greeting / reminder / proactive comment entry point ('greeting' or a free instruction). Resolves with
+   * the turn id, or '' when skipped (busy, hidden, disposed).
+   */
+  proactive(instruction: string, options?: ProactiveOptions): Promise<string>
   setMuted(muted: boolean): void
   isMuted(): boolean
   onState(listener: (state: CompanionState) => void): () => void
@@ -78,6 +92,10 @@ interface ActiveTurn {
   playbackDone: Promise<void>
   resolvePlayback: () => void
   ttsErrorReported: boolean
+  /** Quiet proactive glance: no UI until real text arrives. */
+  quiet: boolean
+  /** turn:started was sent (always true for non-quiet turns). */
+  uiStarted: boolean
 }
 
 const SCREEN_QUESTION_RE =
@@ -94,6 +112,12 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
   /** Aborts a running transcription on interrupt. */
   let sttController: AbortController | null = null
   let proactiveTimer: ReturnType<typeof setInterval> | null = null
+  /**
+   * The most recent agent run. An interrupted run still appends its partial text / 'interrupted' tool
+   * results to the shared history a few ticks after the abort, so the next run waits for it – otherwise
+   * the new user message could land between a tool_use and its tool_result (API 400 on every later turn).
+   */
+  let lastRun: Promise<unknown> = Promise.resolve()
   let lastActivityAt = now()
   let disposed = false
   const listeners = new Set<(state: CompanionState) => void>()
@@ -131,6 +155,8 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
 
   // ---- listening ------------------------------------------------------------------------------
   function startListening(): void {
+    // A quiet proactive glance may still be running while the state is 'idle'.
+    if (active) interrupt()
     const turnId = shortId('t')
     listeningTurnId = turnId
     discardNextAudio = false
@@ -138,13 +164,16 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
     setState('listening')
     send('ptt:start', { turnId })
     clearListeningTimer()
+    // The renderer's own cap (stt.maxRecordingMs) auto-stops the recording; this only covers a renderer
+    // that never answers.
+    const timeoutMs = deps.store.get().stt.maxRecordingMs + LISTENING_GRACE_MS
     listeningTimer = setTimeout(() => {
       if (state === 'listening' && listeningTurnId === turnId) {
         log.warn('no audio arrived after listening – back to idle')
         listeningTurnId = null
         setState('idle')
       }
-    }, LISTENING_TIMEOUT_MS)
+    }, timeoutMs)
   }
 
   function stopListening(): void {
@@ -181,6 +210,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
     text: string,
     source: ActiveTurn['source'],
     signal: AbortSignal,
+    forceScreen: boolean,
   ): Promise<{ context: Record<string, string>; screenshot?: { mediaType: 'image/png' | 'image/jpeg'; base64: string } }> {
     const context: Record<string, string> = {}
     const date = new Date(now())
@@ -208,7 +238,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
       }
     }
     if (signal.aborted) return { context }
-    if (!wantsScreenshot(config, text, source)) return { context }
+    if (!wantsScreenshot(config, text, source, forceScreen)) return { context }
     try {
       const shot = await deps.captureScreen({
         display: config.display,
@@ -225,7 +255,12 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
   }
 
   // ---- turns --------------------------------------------------------------------------------------
-  async function runTurn(text: string, source: ActiveTurn['source'], presetTurnId?: string): Promise<string> {
+  async function runTurn(
+    text: string,
+    source: ActiveTurn['source'],
+    presetTurnId?: string,
+    options: ProactiveOptions = {},
+  ): Promise<string> {
     if (disposed) return ''
     if (active) interrupt()
     const config = deps.store.get()
@@ -237,6 +272,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
       resolvePlayback = resolve
     })
     const tts = muted ? null : deps.tts()
+    const quiet = source === 'proactive' && options.quiet === true
     const turn: ActiveTurn = {
       id: turnId,
       source,
@@ -247,12 +283,20 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
       playbackDone,
       resolvePlayback,
       ttsErrorReported: false,
+      quiet,
+      uiStarted: false,
     }
     active = turn
     lastActivityAt = now()
-    setState('thinking')
-    send('turn:started', { turnId, source })
-    if (source !== 'proactive') send('turn:userText', { turnId, text })
+
+    const startUi = (): void => {
+      if (turn.uiStarted) return
+      turn.uiStarted = true
+      setState('thinking')
+      send('turn:started', { turnId, source })
+      if (source !== 'proactive') send('turn:userText', { turnId, text })
+    }
+    if (!quiet) startUi()
 
     if (tts) {
       turn.pipeline = createSpeechPipeline({
@@ -260,7 +304,9 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
         turnId,
         signal,
         onChunk: (chunk) => {
-          if (active?.id !== turnId) return
+          if (active?.id !== turnId || !turn.uiStarted) return
+          // Her voice is audible from the first sentence on, even while the model is still writing.
+          if (state === 'thinking') setState('speaking')
           send('speech:chunk', chunk)
         },
         onError: (err, sentence) => {
@@ -282,29 +328,41 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
 
     let result: AgentResult | null = null
     try {
-      const { context, screenshot } = await buildContext(config, text, source, signal)
+      const { context, screenshot } = await buildContext(config, text, source, signal, options.screen === true)
       if (signal.aborted) return turnId
+      // Let an interrupted run finish its history writes first (see `lastRun`).
+      await settleWithin(lastRun, RUN_SETTLE_TIMEOUT_MS)
+      if (signal.aborted || active?.id !== turnId) return turnId
       const run = deps.agent().run(
         { turnId, text, source, context, screenshot },
         {
           onText: (delta) => {
             if (active?.id !== turnId) return
             turn.text += delta
+            if (!turn.uiStarted) {
+              // Quiet glance: stay invisible until she really says something (not the silence marker).
+              if (turn.text.includes(SILENCE_MARKER) || !visibleText(turn.text)) return
+              startUi()
+              send('turn:assistantDelta', { turnId, delta: turn.text })
+              pushSentences(turn.chunker.push(turn.text))
+              return
+            }
             send('turn:assistantDelta', { turnId, delta })
             pushSentences(turn.chunker.push(delta))
           },
           onToolCall: (name, summary) => {
-            if (active?.id !== turnId) return
+            if (active?.id !== turnId || !turn.uiStarted) return
             send('turn:toolCall', { turnId, name, summary })
           },
           onToolResult: () => undefined,
           onEmotion: (emotion) => {
-            if (active?.id !== turnId) return
+            if (active?.id !== turnId || !turn.uiStarted) return
             send('emotion:set', { emotion })
           },
         },
         signal,
       )
+      lastRun = run.catch(() => undefined)
       result = await run
     } catch (err) {
       if (active?.id === turnId && !signal.aborted) {
@@ -319,6 +377,13 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
     if (active?.id !== turnId || signal.aborted) return turnId
 
     if (result.aborted) {
+      finishTurn(turn, 'idle')
+      return turnId
+    }
+
+    if (!turn.uiStarted) {
+      // A quiet glance that decided to say nothing (or only refused): leave no trace in the UI.
+      turn.pipeline?.abort()
       finishTurn(turn, 'idle')
       return turnId
     }
@@ -348,8 +413,9 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
       log.warn('pipeline finish failed', err)
     }
     if (active?.id !== turnId) return turnId
-    // Wait for the renderer to finish playing (it reports via playbackFinished), with a safety net.
-    const timeout = setTimeout(() => turn.resolvePlayback(), PLAYBACK_TIMEOUT_MS)
+    // Wait for the renderer to finish playing (it reports via playbackFinished), with a safety net sized
+    // to the amount of text so a long read-aloud is not cut off.
+    const timeout = setTimeout(() => turn.resolvePlayback(), playbackTimeoutMs(turn.text.length))
     await turn.playbackDone
     clearTimeout(timeout)
     if (active?.id === turnId) finishTurn(turn, 'idle')
@@ -388,15 +454,20 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
       if (!canSeeScreen(cfg)) return
       if (inQuietHours(new Date(now()).getHours(), cfg.behavior.proactive.quietHoursStart, cfg.behavior.proactive.quietHoursEnd)) return
       if (now() - lastActivityAt < intervalMs * 0.8) return
-      void proactive(proactiveInstruction(cfg)).catch((err) => log.warn('proactive comment failed', err))
+      void proactive(proactiveInstruction(cfg), { screen: true, quiet: true }).catch((err) =>
+        log.warn('proactive comment failed', err),
+      )
     }, intervalMs)
   }
 
-  async function proactive(instruction: string): Promise<string> {
+  async function proactive(instruction: string, options: ProactiveOptions = {}): Promise<string> {
     if (disposed || state !== 'idle' || active) return ''
+    // Hidden from the tray: no surprise voice and no screenshots (reminders then fall back to a toast).
+    const overlay = deps.overlay()
+    if (!overlay || !overlay.isVisible()) return ''
     const config = deps.store.get()
     const text = instruction === 'greeting' ? greetingInstruction(config.character) : instruction
-    return runTurn(text, 'proactive')
+    return runTurn(text, 'proactive', undefined, options)
   }
 
   // ---- confirms --------------------------------------------------------------------------------------
@@ -422,9 +493,21 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
     pending.resolve(approved)
   }
 
+  /** Deny every open confirm prompt (interrupt/dispose) and close the panels in the renderer. */
+  function denyPendingConfirms(): void {
+    for (const [id, pending] of pendingConfirms) {
+      clearTimeout(pending.timer)
+      pendingConfirms.delete(id)
+      send('confirm:resolved', { id })
+      pending.resolve(false)
+    }
+  }
+
   // ---- public API ------------------------------------------------------------------------------------
   function interrupt(): void {
     clearListeningTimer()
+    // A late "Ja" must never run a destructive tool of a turn the user already cancelled.
+    denyPendingConfirms()
     if (state === 'listening') {
       cancelListening()
       return
@@ -457,9 +540,11 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
           return
         case 'thinking':
         case 'speaking':
-        case 'transcribing':
           interrupt()
           startListening()
+          return
+        case 'transcribing':
+          // The recording already auto-stopped (silence); this press was meant as "stop" – keep the utterance.
           return
         case 'booting':
           return
@@ -537,7 +622,13 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
 
     setMuted(value) {
       muted = value
-      if (muted && state === 'speaking') interrupt()
+      const turn = active
+      if (!muted || !turn?.pipeline) return
+      // Silence her immediately; the text answer (and any running tools) continue.
+      turn.pipeline.abort()
+      turn.pipeline = null
+      send('speech:stop', { turnId: turn.id })
+      turn.resolvePlayback()
     },
     isMuted: () => muted,
 
@@ -554,13 +645,38 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
       unsubscribeConfig()
       if (proactiveTimer) clearInterval(proactiveTimer)
       clearListeningTimer()
-      for (const [id, pending] of pendingConfirms) {
-        clearTimeout(pending.timer)
-        pending.resolve(false)
-        pendingConfirms.delete(id)
-      }
+      denyPendingConfirms()
     },
   }
+}
+
+/** Streamed text as the user would see it: markers removed, a still-open `[[mark…` at the end ignored. */
+export function visibleText(streamed: string): string {
+  return stripMarkers(streamed)
+    .replace(/\[\[[^\]]*$/, '')
+    .trim()
+}
+
+/** Resolve when `promise` settles or after `ms`, whichever comes first (never rejects). */
+function settleWithin(promise: Promise<unknown>, ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms)
+    promise.then(
+      () => {
+        clearTimeout(timer)
+        resolve()
+      },
+      () => {
+        clearTimeout(timer)
+        resolve()
+      },
+    )
+  })
+}
+
+/** Safety net for 'turn:playbackFinished': generous for the amount of text that is being spoken. */
+export function playbackTimeoutMs(textLength: number): number {
+  return Math.max(PLAYBACK_TIMEOUT_MIN_MS, 30_000 + Math.ceil((textLength / PLAYBACK_CHARS_PER_SECOND) * 1000))
 }
 
 /** Screenshots are possible at all: the permission flag is on and screen awareness is not 'off'. */
@@ -569,13 +685,19 @@ export function canSeeScreen(config: FlowyConfig): boolean {
 }
 
 /**
- * Attach a screenshot to this turn? 'always' → every turn; 'on-demand' → screen-like questions and
- * proactive turns (the periodic comment is about the screen); 'off' / no permission → never.
+ * Attach a screenshot to this turn? 'always' → every turn; 'on-demand' → screen-like questions, and
+ * proactive turns only when they ask for it (`forceScreen`: the periodic glance – never the greeting or a
+ * reminder); 'off' / no permission → never.
  */
-export function wantsScreenshot(config: FlowyConfig, text: string, source: 'voice' | 'text' | 'proactive'): boolean {
+export function wantsScreenshot(
+  config: FlowyConfig,
+  text: string,
+  source: 'voice' | 'text' | 'proactive',
+  forceScreen = false,
+): boolean {
   if (!canSeeScreen(config)) return false
-  const mode = config.screenAwareness.mode
-  return mode === 'always' || source === 'proactive' || SCREEN_QUESTION_RE.test(text)
+  if (config.screenAwareness.mode === 'always' || forceScreen) return true
+  return source !== 'proactive' && SCREEN_QUESTION_RE.test(text)
 }
 
 /** Quiet hours may wrap around midnight (e.g. 23 → 8). */
